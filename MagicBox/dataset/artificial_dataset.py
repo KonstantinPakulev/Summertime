@@ -107,5 +107,5 @@ class ArtificialDataset(Dataset):
     def __getitem__(self, item):
         # TODO important step. Do not forget data augmentation
         # 1) read image and point coordinates
-        
+
         pass
