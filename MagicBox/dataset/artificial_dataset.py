@@ -5,51 +5,13 @@ import tarfile
 from pathlib import Path
 from tqdm import tqdm
 import shutil
+import yaml
+import tempfile
+from skimage import io, transform
 
-from .dataset_utils import parse_primitives, save_primitive_data
-from MagicBox.settings import DATA_PATH
+from MagicBox.dataset.dataset_pipeline import *
 
 from torch.utils.data import Dataset
-
-default_config = {
-    'primitives': 'all',
-    'truncate': {},
-    'validation_size': -1,
-    'test_size': -1,
-    'cache_in_memory': False,
-    'suffix': None,
-    'add_augmentation_to_test_set': False,
-    'num_workers': 10,
-    'generation': {
-        'split_sizes': {'training': 10000, 'validation': 200, 'test': 500},
-        'image_size': [960, 1280],
-        'random_seed': 0,
-        'params': {
-            'generate_background': {
-                'min_kernel_size': 150, 'max_kernel_size': 500,
-                'min_rad_ratio': 0.02, 'max_rad_ratio': 0.031},
-            'draw_stripes': {'transform_params': (0.1, 0.1)},
-            'draw_multiple_polygons': {'kernel_boundaries': (50, 100)}
-        },
-    },
-    'preprocessing': {
-        'resize': [240, 320],
-        'blur_size': 11,
-    },
-    'augmentation': {
-        'photometric': {
-            'enable': False,
-            'primitives': 'all',
-            'params': {},
-            'random_order': True,
-        },
-        'homographic': {
-            'enable': False,
-            'params': {},
-            'valid_border_margin': 0,
-        },
-    }
-}
 
 primitives_to_draw = [
     'draw_lines',
@@ -68,13 +30,16 @@ available_modes = ['training', 'validation', 'test']
 
 class ArtificialDataset(Dataset):
 
-    def __init__(self, mode, **config):
+    def __init__(self, mode, config):
 
         assert mode in available_modes
 
+        self.mode = mode
+        self.config = config
+
         primitives = parse_primitives(config['primitives'], primitives_to_draw)
 
-        base_path = Path(DATA_PATH, 'synthetic_shapes' +
+        base_path = Path(config['data_path'], 'synthetic_shapes' +
                          ('_{}'.format(config['suffix']) if config['suffix'] is not None else ''))
         base_path.mkdir(parents=True, exist_ok=True)
 
@@ -87,14 +52,14 @@ class ArtificialDataset(Dataset):
                 save_primitive_data(primitive, tar_path, config)
 
             tar = tarfile.open(tar_path)
-            temp_dir = Path(os.environ['TMPDIR'])
+            temp_dir = Path(tempfile.gettempdir())
             tar.extractall(path=temp_dir)
             tar.close()
 
             truncate = config['truncate'].get(primitive, 1)
             path = Path(temp_dir, primitive)
 
-            e = [str(p) for p in Path(path, 'images', mode).iterdir()]
+            e = [str(p) for p in Path(path, 'images', self.mode).iterdir()]
             f = [p.replace('images', 'points') for p in e]
             f = [p.replace('.png', '.npy') for p in f]
 
@@ -102,10 +67,30 @@ class ArtificialDataset(Dataset):
             self.points.extend(f[:int(truncate * len(f))])
 
     def __len__(self):
-        return len(self.images)
+        if self.mode == available_modes[0]:
+            return len(self.images)
+        elif self.mode == available_modes[1]:
+            return np.min(len(self.images), self.config['validation_size'])
+        elif self.mode == available_modes[2]:
+            return np.min(len(self.images), self.config['test_size'])
+        else:
+            return self.images
 
     def __getitem__(self, item):
-        # TODO important step. Do not forget data augmentation
-        # 1) read image and point coordinates
+        image_path = self.images[item]
+        points_path = self.points[item]
 
-        pass
+        image = np.expand_dims(io.imread(image_path), axis=0)
+        points = np.load(points_path).astype(np.float32)
+
+        # Apply data augmentation
+        if self.mode == 'training':
+            if self.config['augmentation']['photometric']['enable']:
+                image, points =  photometric_augmentation(image, points, self.config['augmentation']['photometric'])
+            if self.config['augmentation']['homographic']['enable']:
+                image, points = homographic_augmentation(image, points, self.config['augmentation']['homographic'])
+
+        # Convert points to keypoint map
+        keypoint_map = get_keypoint_map(image, points)
+
+        return image, keypoint_map
