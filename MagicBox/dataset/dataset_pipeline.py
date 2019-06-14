@@ -35,9 +35,6 @@ def save_primitive_data(primitive, tar_path, config):
                                         **config['generation']['params']['generate_background'])
             points = np.array(getattr(dataset_generators, primitive)(image, **config['generation']['params'].get(primitive, {})))
 
-            if i == 64 and split == 'testing':
-                print(points)
-
             b = config['preprocessing']['blur_size']
             image = cv.GaussianBlur(image, (b, b), 0)
             points = (points * np.array(config['preprocessing']['resize'], np.float)
@@ -64,6 +61,9 @@ def homographic_augmentation(image, points, config):
 
 def get_keypoint_map(image, points):
     truncated_points = np.minimum(np.round(points), np.array(image.shape[1:]) - 1).astype(dtype=np.int32)
+
+    print(points)
+    print(truncated_points)
 
     keypoint_map = np.zeros(image.shape)
     keypoint_map[:, truncated_points[:,0], truncated_points[:, 1]] = np.ones((1, truncated_points.shape[0]))
