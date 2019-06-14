@@ -9,6 +9,7 @@ from tqdm import tqdm
 import shutil
 import tempfile
 
+import MagicBox.dataset.dataset_generators as dataset_generators
 from MagicBox.dataset.dataset_generators import set_random_state, generate_background
 
 
@@ -32,9 +33,10 @@ def save_primitive_data(primitive, tar_path, config):
         for i in tqdm(range(size), desc=split, leave=False):
             image = generate_background(config['generation']['image_size'],
                                         **config['generation']['params']['generate_background'])
-            points = np.array(
-                getattr(sys.modules[__name__], primitive)(image, **config['generation']['params'].get(primitive, {})))
-            points = np.flip(points, 1)
+            points = np.array(getattr(dataset_generators, primitive)(image, **config['generation']['params'].get(primitive, {})))
+
+            if i == 64 and split == 'testing':
+                print(points)
 
             b = config['preprocessing']['blur_size']
             image = cv.GaussianBlur(image, (b, b), 0)

@@ -70,15 +70,17 @@ class ArtificialDataset(Dataset):
         if self.mode == available_modes[0]:
             return len(self.images)
         elif self.mode == available_modes[1]:
-            return np.min(len(self.images), self.config['validation_size'])
+            return np.minimum(len(self.images), self.config['validation_size'])
         elif self.mode == available_modes[2]:
-            return np.min(len(self.images), self.config['test_size'])
+            return np.minimum(len(self.images), self.config['test_size'])
         else:
             return self.images
 
     def __getitem__(self, item):
         image_path = self.images[item]
         points_path = self.points[item]
+
+        print(points_path)
 
         image = np.expand_dims(io.imread(image_path), axis=0)
         points = np.load(points_path).astype(np.float32)
@@ -93,4 +95,4 @@ class ArtificialDataset(Dataset):
         # Convert points to keypoint map
         keypoint_map = get_keypoint_map(image, points)
 
-        return image, keypoint_map
+        return image, points, keypoint_map

@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 
-def plot_imgs(imgs, titles=None, cmap='brg', ylabel='', normalize=False, ax=None, dpi=100):
+def plot_images(imgs, titles=None, cmap='brg', ylabel='', normalize=False, ax=None, dpi=100):
     n = len(imgs)
     if not isinstance(cmap, list):
         cmap = [cmap]*n
