@@ -9,7 +9,7 @@ import yaml
 import tempfile
 from skimage import io, transform
 
-from MagicBox.dataset.dataset_pipeline import *
+from MagicPoint.dataset.dataset_pipeline import *
 
 from torch.utils.data import Dataset
 
@@ -80,15 +80,13 @@ class ArtificialDataset(Dataset):
         image_path = self.images[item]
         points_path = self.points[item]
 
-        print(points_path)
-
-        image = np.expand_dims(io.imread(image_path), axis=0)
+        image = np.asarray(np.expand_dims(io.imread(image_path), axis=0))
         points = np.load(points_path).astype(np.float32)
 
         # Apply data augmentation
         if self.mode == 'training':
             if self.config['augmentation']['photometric']['enable']:
-                image, points =  photometric_augmentation(image, points, self.config['augmentation']['photometric'])
+                image, points = photometric_augmentation(image, points, self.config['augmentation']['photometric'])
             if self.config['augmentation']['homographic']['enable']:
                 image, points = homographic_augmentation(image, points, self.config['augmentation']['homographic'])
 
