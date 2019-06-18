@@ -39,8 +39,7 @@ class ArtificialDataset(Dataset):
 
         primitives = parse_primitives(config['primitives'], primitives_to_draw)
 
-        base_path = Path(config['data_path'], 'synthetic_shapes' +
-                         ('_{}'.format(config['suffix']) if config['suffix'] is not None else ''))
+        base_path = Path(config['data_path'], config['name'] + '_{}'.format(config['suffix']))
         base_path.mkdir(parents=True, exist_ok=True)
 
         self.images = []
@@ -67,20 +66,13 @@ class ArtificialDataset(Dataset):
             self.points.extend(f[:int(truncate * len(f))])
 
     def __len__(self):
-        if self.mode == available_modes[0]:
-            return len(self.images)
-        elif self.mode == available_modes[1]:
-            return np.minimum(len(self.images), self.config['validation_size'])
-        elif self.mode == available_modes[2]:
-            return np.minimum(len(self.images), self.config['test_size'])
-        else:
-            return self.images
+       return len(self.images)
 
     def __getitem__(self, item):
         image_path = self.images[item]
         points_path = self.points[item]
 
-        image = np.asarray(np.expand_dims(io.imread(image_path), axis=0))
+        image = np.asarray(io.imread(image_path)).astype(np.float32)
         points = np.load(points_path).astype(np.float32)
 
         # Apply data augmentation
@@ -93,4 +85,8 @@ class ArtificialDataset(Dataset):
         # Convert points to keypoint map
         keypoint_map = get_keypoint_map(image, points)
 
-        return image, points, keypoint_map
+        # Normalize image to 0..1 and transform it to 3 channels
+        image /= 255
+        image = np.stack((image,) * 3, axis=0)
+
+        return image, keypoint_map

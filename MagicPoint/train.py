@@ -7,7 +7,7 @@ from common.utils import load_config, set_seed
 
 
 def main():
-    config =  load_config('main_config.yaml')
+    config =  load_config('config.yaml')
     data_config = config['data']
     model_config = config['model']
 

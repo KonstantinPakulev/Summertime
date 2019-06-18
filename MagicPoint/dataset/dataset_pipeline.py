@@ -61,10 +61,10 @@ def homographic_augmentation(image, points, config):
 
 
 def get_keypoint_map(image, points):
-    truncated_points = np.minimum(np.round(points), np.array(image.shape[1:]) - 1).astype(dtype=np.int32)
+    truncated_points = np.minimum(np.round(points), np.array(image.shape) - 1).astype(dtype=np.int32)
 
     keypoint_map = np.zeros(image.shape)
-    keypoint_map[:, truncated_points[:,0], truncated_points[:, 1]] = np.ones((1, truncated_points.shape[0]))
+    keypoint_map[truncated_points[:,0], truncated_points[:, 1]] = 1
 
     return keypoint_map
 

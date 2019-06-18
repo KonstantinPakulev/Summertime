@@ -1,8 +1,41 @@
 import matplotlib.pyplot as plt
 import os
 import yaml
-import torch
 import numpy as np
+
+import torch
+
+
+def load_config(path):
+    with open(path, 'r') as f:
+        config = yaml.safe_load(f)
+        return config
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+
+def collate(batch):
+    print(batch)
+    x, y = batch
+    x = x.float()
+    return x, y
+
+
+def get_checkpoint_name(model_name, iter):
+    return model_name + '_{}'.format(iter)
+
+
+def load_checkpoint(path):
+    checkpoint = torch.load(path)
+    return checkpoint['model'], checkpoint['optimizer']
+
+
+def save_checkpoint(model, optimizer, path):
+    torch.save({'model': model.state_dict(),
+                'optimizer': optimizer.state_dict()}, path)
 
 
 def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axes=None, dpi=100):
@@ -31,14 +64,3 @@ def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axe
             spine.set_visible(False)
     axes[0].set_ylabel(ylabel)
     plt.tight_layout()
-
-
-def load_config(path):
-    with open(path, 'r') as f:
-        config = yaml.safe_load(f)
-        return config
-
-
-def set_seed(seed):
-    torch.manual_seed(seed)
-    np.random.seed(seed)

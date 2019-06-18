@@ -43,6 +43,7 @@ def generate_background(size=(960, 1280), nb_blobs=100, min_rad_ratio=0.01,
                   col, -1)
     kernel_size = random_state.randint(min_kernel_size, max_kernel_size)
     cv.blur(img, (kernel_size, kernel_size), img)
+
     return img
 
 
