@@ -88,6 +88,12 @@ def detector_loss(logits, keypoint_map, config):
     return loss
 
 
+def detector_metrics(probs, y):
+    precision = torch.sum(probs * y) / torch.sum(probs)
+    recall = torch.sum(probs * y) / torch.sum(y)
+
+    return {'precision': precision, 'recall': recall}
+
 # TODO make it later.
 # def non_maximum_suppression(boxes, scores, iou_threshold=0.01, keep_top_k=0):
 #     keep = scores.new(scores.size(0)).zero_()

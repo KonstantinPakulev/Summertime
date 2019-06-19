@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
-import os
+from pathlib import Path
 import yaml
 import numpy as np
+import os
 
 import torch
+from torch.utils.data._utils.collate import default_collate
 
 
 def load_config(path):
@@ -18,24 +20,40 @@ def set_seed(seed):
 
 
 def collate(batch):
-    print(batch)
-    x, y = batch
-    x = x.float()
-    return x, y
+    x, y = default_collate(batch)
+    return x.float(), y.float()
 
 
-def get_checkpoint_name(model_name, iter):
-    return model_name + '_{}'.format(iter)
+def get_checkpoint_path(experiment_config, model_config, epoch):
+    base_path = Path(experiment_config['checkpoints_path'], experiment_config['name'])
+    base_path.mkdir(parents=True, exist_ok=True)
+    return base_path.joinpath(model_config['name'] + '_{}.torch'.format(epoch))
+
+
+def clear_old_checkpoints(experiment_config):
+    base_path = os.path.join(experiment_config['checkpoints_path'], experiment_config['name'])
+    if os.path.exists(base_path):
+        checkpoints = sorted([os.path.join(base_path, file) for file in os.listdir(base_path)], key=os.path.getmtime)
+        for cp in checkpoints[:-experiment_config['keep_checkpoints']]:
+            os.remove(cp)
 
 
 def load_checkpoint(path):
     checkpoint = torch.load(path)
-    return checkpoint['model'], checkpoint['optimizer']
+    return checkpoint['epoch'], checkpoint['model'], checkpoint['optimizer']
 
 
-def save_checkpoint(model, optimizer, path):
-    torch.save({'model': model.state_dict(),
+def save_checkpoint(epoch, model, optimizer, path):
+    torch.save({'epoch': epoch,
+                'model': model.state_dict(),
                 'optimizer': optimizer.state_dict()}, path)
+
+
+def init_log_dir(logs_base, experiment_config):
+    log_dir = os.path.join(logs_base, experiment_config['name'])
+    for file in os.listdir(log_dir):
+        os.remove(os.path.join(log_dir, file))
+    return log_dir
 
 
 def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axes=None, dpi=100):

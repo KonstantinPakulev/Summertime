@@ -53,11 +53,48 @@ def save_primitive_data(primitive, tar_path, config):
 
 
 def photometric_augmentation(image, points, config):
+    # with tf.name_scope('photometric_augmentation'):
+    #     primitives = parse_primitives(config['primitives'], photaug.augmentations)
+    #     prim_configs = [config['params'].get(
+    #         p, {}) for p in primitives]
+    #
+    #     indices = tf.range(len(primitives))
+    #     if config['random_order']:
+    #         indices = tf.random_shuffle(indices)
+    #
+    #     def step(i, image):
+    #         fn_pairs = [(tf.equal(indices[i], j),
+    #                      lambda p=p, c=c: getattr(photaug, p)(image, **c))
+    #                     for j, (p, c) in enumerate(zip(primitives, prim_configs))]
+    #         image = tf.case(fn_pairs)
+    #         return i + 1, image
+    #
+    #     _, image = tf.while_loop(lambda i, image: tf.less(i, len(primitives)),
+    #                              step, [0, data['image']], parallel_iterations=1)
+    #
+    # return {**data, 'image': image}
     pass
 
 
 def homographic_augmentation(image, points, config):
+    # with tf.name_scope('homographic_augmentation'):
+    #     image_shape = tf.shape(data['image'])[:2]
+    #     homography = sample_homography(image_shape, **config['params'])[0]
+    #     warped_image = tf.contrib.image.transform(
+    #             data['image'], homography, interpolation='BILINEAR')
+    #     valid_mask = compute_valid_mask(image_shape, homography,
+    #                                     config['valid_border_margin'])
+    #
+    #     warped_points = warp_points(data['keypoints'], homography)
+    #     warped_points = filter_points(warped_points, image_shape)
+    #
+    # ret = {**data, 'image': warped_image, 'keypoints': warped_points,
+    #        'valid_mask': valid_mask}
+    # if add_homography:
+    #     ret['homography'] = homography
+    # return ret
     pass
+
 
 
 def get_keypoint_map(image, points):
