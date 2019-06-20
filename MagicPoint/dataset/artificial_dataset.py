@@ -78,7 +78,7 @@ class ArtificialDataset(Dataset):
         # Apply data augmentation
         if self.mode == 'training':
             if self.config['augmentation']['photometric']['enable']:
-                image, points = photometric_augmentation(image, points, self.config['augmentation']['photometric'])
+                image = photometric_augmentation(image, self.config['augmentation']['photometric'])
             if self.config['augmentation']['homographic']['enable']:
                 image, points = homographic_augmentation(image, points, self.config['augmentation']['homographic'])
 
@@ -89,4 +89,4 @@ class ArtificialDataset(Dataset):
         image /= 255
         image = np.stack((image,) * 3, axis=0)
 
-        return image, keypoint_map
+        return image, points, keypoint_map
