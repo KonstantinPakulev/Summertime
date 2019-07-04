@@ -1,15 +1,7 @@
-import numpy as np
-import cv2
-import os
-import tarfile
-from pathlib import Path
-from tqdm import tqdm
-import shutil
-import yaml
-import tempfile
-from skimage import io, transform
+from skimage import io
 
 from MagicPoint.dataset.dataset_pipeline import *
+from common.utils import grayscale2rgb, normalize_image
 
 from torch.utils.data import Dataset
 
@@ -25,7 +17,17 @@ primitives_to_draw = [
     'gaussian_noise'
 ]
 
-available_modes = ['training', 'validation', 'test']
+# Modes of the dataset
+TRAINING = 'training'
+VALIDATION = 'validation'
+TEST = 'test'
+
+# Dataset item dictionary keys
+IMAGE = 'image'
+POINTS = 'points'
+KEYPOINT_MAP = 'keypoint_map'
+
+available_modes = [TRAINING, VALIDATION, TEST]
 
 
 class ArtificialDataset(Dataset):
@@ -68,9 +70,9 @@ class ArtificialDataset(Dataset):
     def __len__(self):
        return len(self.images)
 
-    def __getitem__(self, item):
-        image_path = self.images[item]
-        points_path = self.points[item]
+    def __getitem__(self, index):
+        image_path = self.images[index]
+        points_path = self.points[index]
 
         image = np.asarray(io.imread(image_path)).astype(np.float32)
         points = np.load(points_path).astype(np.float32)
@@ -78,15 +80,17 @@ class ArtificialDataset(Dataset):
         # Apply data augmentation
         if self.mode == 'training':
             if self.config['augmentation']['photometric']['enable']:
-                image = photometric_augmentation(image, self.config['augmentation']['photometric'])
+                image = photometric_augmentation(image, self.config)
             if self.config['augmentation']['homographic']['enable']:
-                image, points = homographic_augmentation(image, points, self.config['augmentation']['homographic'])
+                image, points = homographic_augmentation(image, points, self.config)
 
         # Convert points to keypoint map
         keypoint_map = get_keypoint_map(image, points)
+        image = normalize_image(grayscale2rgb(image))
 
-        # Normalize image to 0..1 and transform it to 3 channels
-        image /= 255
-        image = np.stack((image,) * 3, axis=0)
+        item = {}
+        item[IMAGE] = image
+        item[POINTS] = points
+        item[KEYPOINT_MAP] = keypoint_map
 
-        return image, points, keypoint_map
+        return item

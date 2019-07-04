@@ -82,3 +82,24 @@ def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axe
             spine.set_visible(False)
     axes[0].set_ylabel(ylabel)
     plt.tight_layout()
+
+
+def grayscale2rgb(image):
+    return np.stack((image,) * 3, axis=0)
+
+
+def rgb2grayscale(image):
+    return image[0]
+
+
+def rgb2gbr(image):
+    return image.transpose((1, 2, 0)).astype(np.uint8)
+
+
+def normalize_image(image):
+    image /= 255
+    return image
+
+
+def to255scale(image):
+    return (image * 255).astype(np.uint8)
