@@ -5,7 +5,26 @@ import numpy as np
 import os
 
 import torch
-from torch.utils.data._utils.collate import default_collate
+
+# Dataset item dictionary keys
+IMAGE = 'image'
+WARPED_IMAGE = 'warped_image'
+
+NAME = 'name'
+POINTS = 'points'
+DEPTH = 'depth'
+HOMOGRAPHY = 'homography'
+
+KEYPOINT_MAP = 'keypoint_map'
+WARPED_KEYPOINT_MAP = 'warped_keypoint_map'
+
+MASK = 'mask'
+WARPED_MASK = 'warped_mask'
+
+# Modes of the dataset
+TRAINING = 'training'
+VALIDATION = 'validation'
+TEST = 'test'
 
 
 def load_config(path):
@@ -19,27 +38,22 @@ def set_seed(seed):
     np.random.seed(seed)
 
 
-def collate(batch):
-    x, y = default_collate(batch)
-    return x.float(), y.float()
-
-
 def get_checkpoint_path(experiment_config, model_config, epoch):
-    base_path = Path(experiment_config['checkpoints_path'], experiment_config['name'])
+    base_path = Path(experiment_config['checkpoints_path'])
     base_path.mkdir(parents=True, exist_ok=True)
     return base_path.joinpath(model_config['name'] + '_{}.torch'.format(epoch))
 
 
 def clear_old_checkpoints(experiment_config):
-    base_path = os.path.join(experiment_config['checkpoints_path'], experiment_config['name'])
+    base_path = os.path.join(experiment_config['checkpoints_path'])
     if os.path.exists(base_path):
         checkpoints = sorted([os.path.join(base_path, file) for file in os.listdir(base_path)], key=os.path.getmtime)
         for cp in checkpoints[:-experiment_config['keep_checkpoints']]:
             os.remove(cp)
 
 
-def load_checkpoint(path):
-    checkpoint = torch.load(path)
+def load_checkpoint(path, map_location=None):
+    checkpoint = torch.load(path, map_location)
     return checkpoint['epoch'], checkpoint['model'], checkpoint['optimizer']
 
 
@@ -49,11 +63,14 @@ def save_checkpoint(epoch, model, optimizer, path):
                 'optimizer': optimizer.state_dict()}, path)
 
 
-def init_log_dir(logs_base, experiment_config):
-    log_dir = os.path.join(logs_base, experiment_config['name'])
-    for file in os.listdir(log_dir):
-        os.remove(os.path.join(log_dir, file))
-    return log_dir
+def get_logs_path(experiment_config):
+    base_path = Path(experiment_config['logs_path'])
+    base_path.mkdir(parents=True, exist_ok=True)
+
+    for file in os.listdir(base_path):
+        os.remove(os.path.join(base_path, file))
+
+    return base_path
 
 
 def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axes=None, dpi=100):
@@ -85,21 +102,33 @@ def plot_images(images, titles=None, cmap='brg', ylabel='', normalize=False, axe
 
 
 def grayscale2rgb(image):
+    assert len(image.shape) == 2
     return np.stack((image,) * 3, axis=0)
 
 
 def rgb2grayscale(image):
+    assert image.shape[0] == 3
     return image[0]
 
 
-def rgb2gbr(image):
-    return image.transpose((1, 2, 0)).astype(np.uint8)
-
-
 def normalize_image(image):
-    image /= 255
+    assert image.ravel().max() <= 255 and image.dtype == np.uint8
+    image = image.astype(np.float) / 255.0
     return image
 
 
 def to255scale(image):
+    assert image.ravel().max() <= 1
     return (image * 255).astype(np.uint8)
+
+
+def read_tum_list(base_path, filename):
+    tum_list = []
+
+    with open(os.path.join(base_path, filename), 'r') as f:
+        lines = f.readlines()[3:]
+        for line in lines:
+            path = line.rstrip().split()[1]
+            tum_list.append(path)
+
+    return tum_list

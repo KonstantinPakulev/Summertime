@@ -13,7 +13,7 @@ import MagicPoint.dataset.photometries as photometries
 import MagicPoint.dataset.dataset_generators as dataset_generators
 
 from MagicPoint.dataset.dataset_generators import set_random_state, generate_background
-from MagicPoint.dataset.homographies import sample_homography, warp_points, filter_points
+from MagicPoint.dataset.homographies import sample_homography, warp_points, filter_points, compute_valid_mask, flat2mat, invert_homography
 
 
 def parse_primitives(names, all_primitives):
@@ -24,7 +24,12 @@ def parse_primitives(names, all_primitives):
 
 
 def save_primitive_data(primitive, tar_path, config):
-    temp_dir = Path(tempfile.gettempdir(), primitive)
+    temp_dir = Path(tempfile.gettempdir(), config['name'] + '_{}'.format(config['suffix']), primitive)
+
+    # Clean temp directory before writing into it
+    if temp_dir.exists():
+        for dir in temp_dir.iterdir():
+            shutil.rmtree(dir)
 
     set_random_state(np.random.RandomState(config['generation']['random_seed']))
 
@@ -63,25 +68,21 @@ def photometric_augmentation(image, config):
     for p, c in zip(primitives, prim_configs):
         image = getattr(photometries, p)(image, c)
 
-    return image.astype(np.float)
+    return image
 
 
 def homographic_augmentation(image, points, config):
-    # Test points with [1:]
-    homography = sample_homography(image.shape, **config['params'])[0]
 
-    image = np.copy(np.asarray(PIL.Image.fromarray(np.uint8(image)).transform(image.shape, Image.AFFINE, homography, Image.BICUBIC))).astype(np.float)
+    homography = sample_homography(image.shape, **config['augmentation']['homographic']['params'])
 
-    # TODO. Need to apply valid mask
-    # TODO. Pack values into dicts
+    warped_image = cv.warpPerspective(image, flat2mat(homography)[0], image.shape[::-1], flags=cv.WARP_INVERSE_MAP)
 
-    #     valid_mask = compute_valid_mask(image_shape, homography,
-    #                                     config['valid_border_margin'])
+    warped_mask = compute_valid_mask(image.shape, homography, config['augmentation']['homographic']['valid_border_margin'])
 
-    points = warp_points(points, homography)
-    points = filter_points(points, image.shape)
+    warped_points = warp_points(points, homography)
+    warped_points = filter_points(warped_points, warped_image.shape)
 
-    return image, points
+    return warped_image, warped_points, warped_mask
 
 
 def get_keypoint_map(image, points):

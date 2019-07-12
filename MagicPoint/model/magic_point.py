@@ -1,5 +1,5 @@
-import torch
 import torch.nn as nn
+
 from common.model_utils import make_vgg_backbone, make_detector_head, DepthToSpace
 
 
@@ -22,11 +22,5 @@ class MagicPoint(nn.Module):
         probs = probs[:, :-1, :, :]
         probs = self.detector_upscale(probs)
         probs = probs.squeeze()
-
-        # TODO. Homography adaptation?
-        # TODO. Non-maximum supression.
-
-        # if self.config['nms']: for p in probs: box_nms(p, self.config['nms'], min_prob=self.config[
-        # 'detection_threshold'], keep_top_k=self.config['top_k'])
 
         return {'logits': x, 'probs': probs}
