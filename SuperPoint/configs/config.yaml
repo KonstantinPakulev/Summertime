@@ -50,6 +50,6 @@ experiment:
   save_interval: 25
   checkpoints_path: 'checkpoints'
   keep_checkpoints: 6
-  load_checkpoints: false
-  load_checkpoint_iter: 20
+  load_checkpoints: true
+  load_checkpoint_iter: 50
   logs_path: 'logs'

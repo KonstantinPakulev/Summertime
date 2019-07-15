@@ -71,7 +71,7 @@ def label():
         for item in keypoint_map:
             file.write("{}\n".format(item))
 
-    os.rename(dataset.base_path, os.path.join(config['dest_path'], config['name']))
+    os.rename(dataset.base_path, os.path.join(data_config['dest_path'], data_config['name']))
 
 if __name__ == "__main__":
     label()

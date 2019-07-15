@@ -112,6 +112,18 @@ def launch_training():
             train_warped_det_precision += warped_metrics['precision'].cpu().item()
             train_warped_det_recall += warped_metrics['recall'].cpu().item()
 
+        train_total_det_loss /= train_data_loader.__len__()
+        train_det_loss /= train_data_loader.__len__()
+        train_warped_det_loss /= train_data_loader.__len__()
+
+        train_desc_loss /= train_data_loader.__len__()
+
+        train_det_precision /= train_data_loader.__len__()
+        train_det_recall /= train_data_loader.__len__()
+
+        train_warped_det_precision /= train_data_loader.__len__()
+        train_warped_det_recall /= train_data_loader.__len__()
+
         writer.add_scalar('training/total_det_loss', train_total_det_loss, epoch)
         writer.add_scalar('training/det_loss', train_det_loss, epoch)
         writer.add_scalar('training/warped_det_loss', train_warped_det_loss, epoch)
@@ -174,6 +186,18 @@ def launch_training():
 
                 val_warped_det_precision += warped_metrics['precision'].cpu().item()
                 val_warped_det_recall += warped_metrics['recall'].cpu().item()
+
+            val_total_det_loss /= val_data_loader.__len__()
+            val_det_loss /= val_data_loader.__len__()
+            val_warped_det_loss /= val_data_loader.__len__()
+
+            val_desc_loss /= val_data_loader.__len__()
+
+            val_det_precision /= val_data_loader.__len__()
+            val_det_recall /= val_data_loader.__len__()
+
+            val_warped_det_precision /= val_data_loader.__len__()
+            val_warped_det_recall /= val_data_loader.__len__()
 
             writer.add_scalar('validation/total_det_loss', val_total_det_loss, epoch)
             writer.add_scalar('validation/det_loss', val_det_loss, epoch)
