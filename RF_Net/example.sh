@@ -2,8 +2,8 @@
 
 root="/Vol0/user/k.pakulev/Summertime/RF_Net/runs"
 date="07_15_20_00"
-model="e004_NN_0.332_NNT_0.447_NNDR_0.823_MeanMS_0.534.pth.tar"
-img_path="/Vol0/user/k.pakulev/Summertime/RF_Net/material/img2.png@/Vol0/user/k.pakulev/Summertime/RF_Net/material/img3.png"
+model="e089_NN_0.418_NNT_0.636_NNDR_0.867_MeanMS_0.640.pth.tar"
+img_path="/Vol0/user/k.pakulev/Summertime/RF_Net/data/hpatch_v_sequence/v_adam"
 
 save=""$root"/"$date""
 resume=""$save"/model/"$model""

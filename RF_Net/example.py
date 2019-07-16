@@ -59,24 +59,15 @@ if __name__ == "__main__":
     checkpoint = torch.load(resume)
     model.load_state_dict(checkpoint["state_dict"])
 
-    ###############################################################################
-    # detect and compute
-    ###############################################################################
-    img1_path, img2_path = args.imgpath.split("@")
-    kp1, des1, img1 = model.detectAndCompute(img1_path, device, (320, 240))
-    kp2, des2, img2 = model.detectAndCompute(img2_path, device, (320, 240))
-
-    predict_label, nn_kp2 = nearest_neighbor_distance_ratio_match(des1, des2, kp2, 0.7)
-    idx = predict_label.nonzero().view(-1)
-    mkp1 = kp1.index_select(dim=0, index=idx.long())  # predict match keypoints in I1
-    mkp2 = nn_kp2.index_select(dim=0, index=idx.long())  # predict match keypoints in I2
 
     def to_cv2_kp(kp):
         # kp is like [batch_idx, y, x, channel]
         return cv2.KeyPoint(kp[2], kp[1], 0)
 
+
     def to_cv2_dmatch(m):
         return cv2.DMatch(m, m, m, m)
+
 
     def reverse_img(img):
         """
@@ -89,12 +80,48 @@ if __name__ == "__main__":
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)  # gray to rgb
         return img
 
-    img1, img2 = reverse_img(img1), reverse_img(img2)
-    keypoints1 = list(map(to_cv2_kp, mkp1))
-    keypoints2 = list(map(to_cv2_kp, mkp2))
-    DMatch = list(map(to_cv2_dmatch, np.arange(0, len(keypoints1))))
 
-    # matches1to2	Matches from the first image to the second one, which means that
-    # keypoints1[i] has a corresponding point in keypoints2[matches[i]] .
-    outImg = cv2.drawMatches(img1, keypoints1, img2, keypoints2, DMatch, None)
-    cv2.imwrite("material/result.png", outImg)
+    ###############################################################################
+    # detect and compute
+    ###############################################################################
+    img_path = args.imgpath
+    image_paths = [os.path.join(img_path, f) for f in os.listdir(img_path) if f.endswith('.ppm')]
+    detections = []
+
+    if not os.path.exists("material/detections"):
+        os.mkdir("material/detections")
+
+    if not os.path.exists("material/matches"):
+        os.mkdir("material/matches")
+
+    for p in image_paths:
+        kp, des, img = model.detectAndCompute(p, device, (450, 600))
+        detections.append((kp, des, img))
+
+        keypoints = list(map(to_cv2_kp, kp))
+        image_detections = cv2.drawKeypoints(reverse_img(img), keypoints, None, color=(0, 255, 0))
+
+        cv2.imwrite(os.path.join("material/detections", os.path.basename(p)), image_detections)
+
+    for i, (a, b) in enumerate(zip(detections[:-1], detections[1:])):
+        kp1, des1, img1 = a
+        kp2, des2, img2 = b
+
+        predict_label, nn_kp2 = nearest_neighbor_distance_ratio_match(des1, des2, kp2, 0.7)
+        idx = predict_label.nonzero().view(-1)
+
+        mkp1 = kp1.index_select(dim=0, index=idx.long())  # predict match keypoints in I1
+        mkp2 = nn_kp2.index_select(dim=0, index=idx.long())  # predict match keypoints in I2
+
+        img1, img2 = reverse_img(img1), reverse_img(img2)
+
+        keypoints1 = list(map(to_cv2_kp, mkp1))
+        keypoints2 = list(map(to_cv2_kp, mkp2))
+
+        DMatch = list(map(to_cv2_dmatch, np.arange(0, len(keypoints1))))
+
+        # matches1to2	Matches from the first image to the second one, which means that
+        # keypoints1[i] has a corresponding point in keypoints2[matches[i]] .
+
+        image_matches = cv2.drawMatches(img1, keypoints1, img2, keypoints2, DMatch, None)
+        cv2.imwrite(os.path.join("material/matches", str(i + 1) + "_" + str(i + 2) + ".png"), image_matches)

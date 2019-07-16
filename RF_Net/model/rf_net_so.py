@@ -213,6 +213,14 @@ class RFNetSO(RFNetModule):
         )
 
         # inference
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+        start.record()
         _, kp, des = self.inference(img, img_info, img_raw)
+        end.record()
+
+        torch.cuda.synchronize()
+        print(f"Inference time is: {start.elapsed_time(end):.2f}")
 
         return kp, des, img
