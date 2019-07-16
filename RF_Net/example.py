@@ -94,14 +94,14 @@ if __name__ == "__main__":
     if not os.path.exists("material/matches"):
         os.mkdir("material/matches")
 
-    for p in image_paths:
+    for i, p in enumerate(image_paths):
         kp, des, img = model.detectAndCompute(p, device, (450, 600))
         detections.append((kp, des, img))
 
         keypoints = list(map(to_cv2_kp, kp))
         image_detections = cv2.drawKeypoints(reverse_img(img), keypoints, None, color=(0, 255, 0))
 
-        cv2.imwrite(os.path.join("material/detections", os.path.basename(p)), image_detections)
+        cv2.imwrite(os.path.join("material/detections", str(i) + ".png"), image_detections)
 
     for i, (a, b) in enumerate(zip(detections[:-1], detections[1:])):
         kp1, des1, img1 = a
