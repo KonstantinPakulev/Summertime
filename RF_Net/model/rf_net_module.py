@@ -11,13 +11,14 @@ from RF_Net.utils.math_utils import MSD, distance_matrix_vector, L2Norm
 
 
 class RFNetModule(nn.Module):
-    def __init__(self, det, des, SCORE_W, PAIR_W):
+    def __init__(self, det, des, SCORE_W, PAIR_W, USE_PATCH_LOSS):
         super(RFNetModule, self).__init__()
 
         self.det = det
         self.des = des
         self.SCORE_W = SCORE_W
         self.PAIR_W = PAIR_W
+        self.USE_PATCH_LOSS = USE_PATCH_LOSS
 
     def forward(self, **kwargs):
         pass
@@ -153,7 +154,7 @@ class RFNetModule(nn.Module):
         hard_loss = (im1_hardloss + im2_hardloss) / 2.0
 
         # loss summary
-        det_loss = score_loss + pair_loss
+        det_loss = score_loss + pair_loss if self.USE_PATCH_LOSS else score_loss
         des_loss = hard_loss
 
         PLT_SCALAR = {}

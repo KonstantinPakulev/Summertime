@@ -5,8 +5,10 @@ from __future__ import print_function
 # `pip install easydict` if you don't have it
 from easydict import EasyDict as edict
 
+
 __C = edict()
 cfg = __C
+
 
 """
 Project options
@@ -167,9 +169,11 @@ Patch options
 """
 __C.PATCH = edict()
 
+# patch loss type
+__C.PATCH.USE_PATCH_LOSS = True
+
 # patch size
 __C.PATCH.SIZE = 32
-
 
 """
 Hardnet options

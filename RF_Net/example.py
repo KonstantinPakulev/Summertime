@@ -22,6 +22,7 @@ from RF_Net.config import cfg
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="example")
+    parser.add_argument("--save", default=None, type=str) # save path
     parser.add_argument("--imgpath", default=None, type=str)  # image path
     parser.add_argument("--resume", default=None, type=str)  # model path
     args = parser.parse_args()
@@ -88,11 +89,15 @@ if __name__ == "__main__":
     image_paths = [os.path.join(img_path, f) for f in os.listdir(img_path) if f.endswith('.ppm')]
     detections = []
 
-    if not os.path.exists("material/detections"):
-        os.mkdir("material/detections")
+    save = args.save
+    detections_path = os.path.join(save, "material/detections")
+    matches_path = os.path.join(save, "material/matches")
 
-    if not os.path.exists("material/matches"):
-        os.mkdir("material/matches")
+    if not os.path.exists(detections_path):
+        os.mkdir(detections_path)
+
+    if not os.path.exists(matches_path):
+        os.mkdir(matches_path)
 
     for i, p in enumerate(image_paths):
         kp, des, img = model.detectAndCompute(p, device, (450, 600))
@@ -101,7 +106,7 @@ if __name__ == "__main__":
         keypoints = list(map(to_cv2_kp, kp))
         image_detections = cv2.drawKeypoints(reverse_img(img), keypoints, None, color=(0, 255, 0))
 
-        cv2.imwrite(os.path.join("material/detections", str(i) + ".png"), image_detections)
+        cv2.imwrite(os.path.join(detections_path, str(i) + ".png"), image_detections)
 
     for i, (a, b) in enumerate(zip(detections[:-1], detections[1:])):
         kp1, des1, img1 = a
@@ -124,4 +129,4 @@ if __name__ == "__main__":
         # keypoints1[i] has a corresponding point in keypoints2[matches[i]] .
 
         image_matches = cv2.drawMatches(img1, keypoints1, img2, keypoints2, DMatch, None)
-        cv2.imwrite(os.path.join("material/matches", str(i + 1) + "_" + str(i + 2) + ".png"), image_matches)
+        cv2.imwrite(os.path.join(matches_path, str(i + 1) + "_" + str(i + 2) + ".png"), image_matches)

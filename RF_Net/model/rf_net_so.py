@@ -9,8 +9,8 @@ from RF_Net.utils.image_utils import clip_patch, topk_map
 
 
 class RFNetSO(RFNetModule):
-    def __init__(self, det, des, SCORE_W, PAIR_W, PSIZE, TOPK):
-        super(RFNetSO, self).__init__(det, des, SCORE_W, PAIR_W)
+    def __init__(self, det, des, SCORE_W, PAIR_W, USE_PATCH_LOSS, PSIZE, TOPK):
+        super(RFNetSO, self).__init__(det, des, SCORE_W, PAIR_W, USE_PATCH_LOSS)
 
         self.PSIZE = PSIZE
         self.TOPK = TOPK
@@ -156,8 +156,23 @@ class RFNetSO(RFNetModule):
 
         return endpoint
 
-    def inference(self, im_data, im_info, im_raw):
+    def inference(self, im_data, im_info, im_raw, show_inference_time=False):
+        start_det = torch.cuda.Event(enable_timing=True)
+        end_det = torch.cuda.Event(enable_timing=True)
+
+        start_det_forward = torch.cuda.Event(enable_timing=True)
+        end_det_forward = torch.cuda.Event(enable_timing=True)
+
+        start_det_extract = torch.cuda.Event(enable_timing=True)
+        end_det_extract = torch.cuda.Event(enable_timing=True)
+
+        start_det.record()
+
+        start_det_forward.record()
         im_rawsc, im_scale, im_orint = self.det(im_data)
+        end_det_forward.record()
+
+        start_det_extract.record()
         im_score = self.det.process(im_rawsc)[0]
         im_topk = topk_map(im_score, self.TOPK)
         kpts = im_topk.nonzero()  # (B*topk, 4)
@@ -173,8 +188,24 @@ class RFNetSO(RFNetModule):
             im_raw,
             PSIZE=self.PSIZE,
         )  # (numkp, 1, 32, 32)
+        end_det_extract.record()
 
+        end_det.record()
+
+        start_des = torch.cuda.Event(enable_timing=True)
+        end_des = torch.cuda.Event(enable_timing=True)
+
+        start_des.record()
         im_des = self.des(im_patches)
+        end_des.record()
+
+        torch.cuda.synchronize()
+
+        if show_inference_time:
+            print(f"Detector inference time is: {start_det.elapsed_time(end_det):.2f}")
+            print(f"Detector forward time is: {start_det_forward.elapsed_time(end_det_forward):.2f}")
+            print(f"Detector extract time is: {start_det_extract.elapsed_time(end_det_extract):.2f}")
+            print(f"Descriptor inference time is: {start_des.elapsed_time(end_des):.2f}")
 
         return im_scale, kpts, im_des
 
@@ -217,10 +248,10 @@ class RFNetSO(RFNetModule):
         end = torch.cuda.Event(enable_timing=True)
 
         start.record()
-        _, kp, des = self.inference(img, img_info, img_raw)
+        _, kp, des = self.inference(img, img_info, img_raw, show_inference_time=True)
         end.record()
 
         torch.cuda.synchronize()
-        print(f"Inference time is: {start.elapsed_time(end):.2f}")
+        print(f"Total inference time is: {start.elapsed_time(end):.2f}")
 
         return kp, des, img

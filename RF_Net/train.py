@@ -21,6 +21,7 @@ module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
+
 from RF_Net.hpatch_dataset import (
     HpatchDataset,
     Grayscale,
@@ -62,7 +63,7 @@ def select_optimizer(optim, param, lr, wd):
 
 
 def create_optimizer(
-    det_optim, des_optim, model, det_lr, des_lr, det_wd, des_wd, mgpu=False
+        det_optim, des_optim, model, det_lr, des_lr, det_wd, des_wd, mgpu=False
 ):
     if mgpu:
         det_param = model.module.det.parameters()
@@ -94,41 +95,44 @@ def parse_parms():
     parser.add_argument(
         "--des-step", default=2, type=int, help="train descriptor step(defualt: 2)"
     )
+    parser.add_argument(
+        "--use-pl", default=True, type=bool, help="whether to use patch loss"
+    )
     return parser.parse_args()
 
 
-def reserve_mem():
-    try:
-        gpuid = int(os.environ["CUDA_VISIBLE_DEVICES"])
-    except:
-        gpuid = -1
-
-    smi = (
-        os.popen(
-            "nvidia-smi --query-gpu=memory.total,memory.used --format=csv,nounits,noheader"
-        )
-        .read()
-        .strip()
-        .replace("\n", ",")
-        .replace(" ", "")
-        .split(",")
-    )
-    total, used = int(smi[2 * gpuid]), int(smi[2 * gpuid + 1])
-    block_ratio = 0.90
-    max_mem = int(total * block_ratio)
-    block_mem = max_mem - used
-    x = torch.rand((256, 1024, block_mem)).cuda()
-    x = torch.rand((2, 2)).cuda()
-    print(
-        f"{gct()} : GPU usage total:{total} used:{used} max_mem:{max_mem} block_ratio:{block_ratio} block_mem:{block_mem}"
-    )
+# def reserve_mem():
+#     try:
+#         gpuid = int(os.environ["CUDA_VISIBLE_DEVICES"])
+#     except:
+#         gpuid = -1
+#
+#     smi = (
+#         os.popen(
+#             "nvidia-smi --query-gpu=memory.total,memory.used --format=csv,nounits,noheader"
+#         )
+#         .read()
+#         .strip()
+#         .replace("\n", ",")
+#         .replace(" ", "")
+#         .split(",")
+#     )
+#     total, used = int(smi[2 * gpuid]), int(smi[2 * gpuid + 1])
+#     block_ratio = 0.90
+#     max_mem = int(total * block_ratio)
+#     block_mem = max_mem - used
+#     x = torch.rand((256, 1024, block_mem)).cuda()
+#     x = torch.rand((2, 2)).cuda()
+#     print(
+#         f"{gct()} : GPU usage total:{total} used:{used} max_mem:{max_mem} block_ratio:{block_ratio} block_mem:{block_mem}"
+#     )
 
 
 if __name__ == "__main__":
-    from RF_Net.config import cfg
     from RF_Net.model.rf_det_so import RFDetSO
     from RF_Net.model.rf_des import HardNetNeiMask
     from RF_Net.model.rf_net_so import RFNetSO
+    from RF_Net.config import cfg
 
     # reserving gpu memory
     # print(f"{gct()} : Reserving memory")
@@ -138,6 +142,8 @@ if __name__ == "__main__":
     cfg.TRAIN.SAVE = args.save
     cfg.TRAIN.DET = args.det_step
     cfg.TRAIN.DES = args.des_step
+    cfg.PATCH.USE_PATCH_LOSS = args.use_pl
+
     print(f"{gct()} : Called with args:{args}")
     print(f"{gct()} : Using config:")
     prettydict(cfg)
@@ -178,7 +184,7 @@ if __name__ == "__main__":
     )
     des = HardNetNeiMask(cfg.HARDNET.MARGIN, cfg.MODEL.COO_THRSH)
     model = RFNetSO(
-        det, des, cfg.LOSS.SCORE, cfg.LOSS.PAIR, cfg.PATCH.SIZE, cfg.TRAIN.TOPK
+        det, des, cfg.LOSS.SCORE, cfg.LOSS.PAIR, cfg.PATCH.USE_PATCH_LOSS, cfg.PATCH.SIZE, cfg.TRAIN.TOPK
     )
     if mgpu:
         model = torch.nn.DataParallel(model)
@@ -307,6 +313,7 @@ if __name__ == "__main__":
     train_writer = SummaryWriter(f"{args.save}/log/train")
     test_writer = SummaryWriter(f"{args.save}/log/test")
 
+
     ###############################################################################
     # Training function
     ###############################################################################
@@ -388,6 +395,7 @@ if __name__ == "__main__":
                     print(f"{gct()} | {pstring}")
                     start_time = time.time()
 
+
     ###############################################################################
     # evaluate function
     ###############################################################################
@@ -416,6 +424,7 @@ if __name__ == "__main__":
             f"NN_{PreNN:.3f}_NNT_{PreNNT:.3f}_NNDR_{PreNNDR:.3f}_MeanMS_{meanms:.3f}"
         )
         return checkpoint_name, meanms
+
 
     ###############################################################################
     # Training code
