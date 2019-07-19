@@ -13,16 +13,38 @@ module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
-from RF_Net.utils.common_utils import gct
-from RF_Net.utils.eval_utils import nearest_neighbor_distance_ratio_match
-from RF_Net.model.rf_des import HardNetNeiMask
-from RF_Net.model.rf_det_so import RFDetSO
-from RF_Net.model.rf_net_so import RFNetSO
-from RF_Net.config import cfg
+from ST_Net.utils.common_utils import gct
+from ST_Net.model.st_net_vgg import STNetVGGModule
+from ST_Net.model.st_des_vgg import STDesVGGModule
+from ST_Net.model.st_det_vgg import STDetVGGModule
+from ST_Net.config import cfg
+
+
+def distance_matrix_vector(anchor, positive):
+    """
+    Given batch of anchor descriptors and positive descriptors calculate distance matrix
+    :param anchor: (B, 128)
+    :param positive: (B, 128)
+    :return:
+    """
+    eps = 1e-8
+    FeatSimi_Mat = 2 - 2 * torch.mm(anchor, positive.t())  # [0, 4]
+    FeatSimi_Mat = FeatSimi_Mat.clamp(min=eps, max=4.0)
+    FeatSimi_Mat = torch.sqrt(FeatSimi_Mat)  # euc [0, 2]
+    return FeatSimi_Mat
+
+def nearest_neighbor_distance_ratio_match(des1, des2, kp2, threshold):
+    des_dist_matrix = distance_matrix_vector(des1, des2)
+    sorted, indices = des_dist_matrix.sort(dim=-1)
+    Da, Db, Ia = sorted[:, 0], sorted[:, 1], indices[:, 0]
+    DistRatio = Da / Db
+    predict_label = DistRatio.lt(threshold)
+    nn_kp2 = kp2.index_select(dim=0, index=Ia.view(-1))
+    return predict_label, nn_kp2
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="example")
-    parser.add_argument("--save", default=None, type=str) # save path
+    parser.add_argument("--save", default=None, type=str)  # save path
     parser.add_argument("--imgpath", default=None, type=str)  # image path
     parser.add_argument("--resume", default=None, type=str)  # model path
     args = parser.parse_args()
@@ -34,36 +56,31 @@ if __name__ == "__main__":
     np.random.seed(cfg.PROJ.SEED)
 
     print(f"{gct()} : model init")
-    det = RFDetSO(
-        cfg.TRAIN.score_com_strength,
-        cfg.TRAIN.scale_com_strength,
+    det = STDetVGGModule(
+        cfg.MODEL.GRID_SIZE,
         cfg.TRAIN.NMS_THRESH,
         cfg.TRAIN.NMS_KSIZE,
         cfg.TRAIN.TOPK,
         cfg.MODEL.GAUSSIAN_KSIZE,
         cfg.MODEL.GAUSSIAN_SIGMA,
-        cfg.MODEL.KSIZE,
-        cfg.MODEL.padding,
-        cfg.MODEL.dilation,
-        cfg.MODEL.scale_list,
     )
-    des = HardNetNeiMask(cfg.HARDNET.MARGIN, cfg.MODEL.COO_THRSH)
-    model = RFNetSO(
-        det, des, cfg.LOSS.SCORE, cfg.LOSS.PAIR, cfg.PATCH.USE_PATCH_LOSS, cfg.PATCH.SIZE, cfg.TRAIN.TOPK
+    des = STDesVGGModule(8, 128)
+    model = STNetVGGModule(
+        det, des
     )
 
     print(f"{gct()} : to device")
-    device = torch.device("cuda")
+    device = torch.device("cpu")
     model = model.to(device)
     resume = args.resume
     print(f"{gct()} : in {resume}")
-    checkpoint = torch.load(resume)
+    checkpoint = torch.load(resume, map_location='cpu')
     model.load_state_dict(checkpoint["state_dict"])
 
 
     def to_cv2_kp(kp):
         # kp is like [batch_idx, y, x, channel]
-        return cv2.KeyPoint(kp[2], kp[1], 0)
+        return cv2.KeyPoint(kp[3], kp[2], 0)
 
 
     def to_cv2_dmatch(m):
@@ -100,8 +117,8 @@ if __name__ == "__main__":
         os.mkdir(matches_path)
 
     for i, p in enumerate(image_paths):
-        kp, des, img = model.detectAndCompute(p, device, (450, 600))
-        detections.append((kp, des, img))
+        kp, desc, img = model.detectAndCompute(p, device, (450, 600))
+        detections.append((kp, desc, img))
 
         keypoints = list(map(to_cv2_kp, kp))
         image_detections = cv2.drawKeypoints(reverse_img(img), keypoints, None, color=(0, 255, 0))

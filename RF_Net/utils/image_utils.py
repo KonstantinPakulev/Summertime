@@ -161,7 +161,7 @@ def clip_patch(kpts_byxc, kpts_scale, kpts_ori, im_info, images, PSIZE):
 def warp(im1_data, homo21):
     """
     warp im1 to im2
-    cause we get pixel valu ein im2 from im1
+    cause we get pixel value in im2 from im1
     so we warp grid in im2 to im1 that we need homo21
     :param im1_data: (B, H, W, C)
     :param homo21: (B, 3, 3)
