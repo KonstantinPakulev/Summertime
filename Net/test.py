@@ -79,10 +79,22 @@ def test(device, log_dir):
 if __name__ == "__main__":
     _device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    t1 = torch.ones((3, 16, 30, 40))
-    t2 = torch.ones((3, 16, 30, 40))
-    mask = torch.ones((3, 1, 30, 40))
+    t1 = torch.rand((30, 40, 30, 40))
 
-    print(nearest_neighbor_match_score(t1, t2, mask))
+    v, i = t1.view((1200, 1200)).min(-1)
+
+    r = i[0] // 40
+    c = i[0] - (i[0] // 40 * 40)
+    
+    print(v[0])
+    print(t1[0, 0, r, c])
+
+
+    # t2 = torch.ones((3, 16, 30, 40))
+    # mask = torch.ones((3, 1, 30, 40))
+    #
+    # print(nearest_neighbor_match_score(t1, t2, mask))
+
+
 
     # test(_device, ".")
