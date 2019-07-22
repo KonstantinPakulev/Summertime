@@ -19,7 +19,6 @@ from Net.hpatches_dataset import (
     HPatchesDataset,
     TRAIN,
     VALIDATE,
-    TEST,
     Grayscale,
     Normalize,
     RandomCrop,
