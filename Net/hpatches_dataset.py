@@ -175,9 +175,6 @@ class RandomCrop:
 
 class ToTensor():
 
-    def __init__(self, device):
-        self.device = device
-
     def __call__(self, item):
         im1, im2, homo = (
             item["im1"],
@@ -191,8 +188,8 @@ class ToTensor():
         im1 = im1.transpose((2, 0, 1))
         im2 = im2.transpose((2, 0, 1))
 
-        item["im1"] = torch.from_numpy(im1).float().to(self.device)
-        item["im2"] = torch.from_numpy(im2).float().to(self.device)
-        item["homo"] = torch.from_numpy(np.asarray(homo)).float().to(self.device)
+        item["im1"] = torch.from_numpy(im1).float()
+        item["im2"] = torch.from_numpy(im2).float()
+        item["homo"] = torch.from_numpy(np.asarray(homo)).float()
 
         return item

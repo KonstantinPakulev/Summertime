@@ -120,14 +120,12 @@ def warp_coordinates_grid(grid, homography):
     n, h, w, _ = grid.size()
 
     # Convert grid to homogeneous coordinates
-    ones = torch.ones((n, h, w, 1))
+    ones = torch.ones((n, h, w, 1)).type_as(grid).to(grid.device)
     grid = torch.cat((grid, ones), dim=-1) # N x H x W x 3
 
     # Flatten spatial dimensions
     grid = grid.view(n, -1, 3)  # B x H*W x 3
     grid = grid.permute(0, 2, 1)  # B x 3 x H*W
-
-    grid = grid.type_as(homography).to(homography.device)
 
     # B x 3 x 3 matmul B x 3 x H*W => B x 3 x H*W
     w_grid = torch.matmul(homography, grid)
@@ -149,16 +147,56 @@ def warp_image(image, homography):
 
     _, _, h, w = image.size()
 
-    grid = create_coordinates_grid(image.size())
+    grid = create_coordinates_grid(image.size()).to(image.device)
     w_grid = warp_coordinates_grid(grid, homography)
 
     # Normalize coordinates in range [-1, 1]
     w_grid[:, :, :, 0] = w_grid[:, :, :, 0] / (w - 1) * 2 - 1
     w_grid[:, :, :, 1] = w_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
-    w_image = F.grid_sample(image.permute((0, )), w_grid)  # N x C x H x W
+    w_image = F.grid_sample(image, w_grid)  # N x C x H x W
 
     return w_image
+
+
+def erode_mask(mask):
+    """
+    :param mask: N x 1 x H x W
+    """
+
+    kernel_size = 5
+    morph_ellipse_kernel = torch.tensor([[[[0, 0, 1, 0, 0],
+                                           [1, 1, 1, 1, 1],
+                                           [1, 1, 1, 1, 1],
+                                           [1, 1, 1, 1, 1],
+                                           [0, 0, 1, 0, 0]]]]).type_as(mask).to(mask.device)
+
+    square = kernel_size * kernel_size
+    ones = morph_ellipse_kernel.sum()
+
+    morphed_mask = F.conv2d(mask, weight=morph_ellipse_kernel, padding=kernel_size // 2) / ones
+    morphed_mask = morphed_mask.gt(ones / square).type_as(mask).to(mask.device)
+
+    return morphed_mask
+
+
+def space_to_depth(image, grid_size):
+    """
+    :param image: N x C x H x W
+    :param grid_size: int
+    """
+
+    n, c, h, w = image.size()
+
+    hr = h // grid_size
+    wr = w // grid_size
+
+    x = image.view(n, c, hr, grid_size, wr, grid_size)
+    x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # N x grid_size x grid_size x C x Hr x Wr
+    x = x.view(n, c * (grid_size ** 2), hr, wr)  # N x C * grid_size^2 x Hr x Wr
+
+    return x
+
 
 
 

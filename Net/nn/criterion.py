@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid
+from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, space_to_depth
 
 
 class HomoHingeLoss(nn.Module):
@@ -13,15 +13,18 @@ class HomoHingeLoss(nn.Module):
         self.pos_margin = pos_margin
         self.neg_margin = neg_margin
 
-    def forward(self, desc1, desc2, homo):
+    def forward(self, desc1, desc2, homo, mask):
         """
-        :param desc1: N x C x H/8 x W/8
-        :param desc2: N x C x H/8 x W/8
+        :param desc1: N x C x Hr x Wr
+        :param desc2: N x C x Hr x Wr
         :param homo: 3 x 3
+        :param mask: Mask of the second image. N x 1 x H x W
+        Note: 'r' suffix means reduced in 'grid_size' times
         """
 
         # We need to account for difference in size between descriptor and image for homography to work
         grid = create_coordinates_grid(desc1.size()) * self.grid_size + self.grid_size // 2
+        grid = grid.type_as(homo).to(homo.device)
         w_grid = warp_coordinates_grid(grid, homo)
 
         grid = grid.unsqueeze(dim=3).unsqueeze(dim=3)
@@ -42,6 +45,13 @@ class HomoHingeLoss(nn.Module):
 
         loss = self.pos_lambda * s * pos_dist + (1 - s) * neg_dist
 
-        # TODO. Bordering mask
+        # Mask bordering pixels
+        n, _, _, _, hr, wr = desc2.size()
 
-        return loss.mean()
+        r_mask = space_to_depth(mask, self.grid_size).prod(dim=1)
+        r_mask = r_mask.reshape([n, 1, 1, hr, wr])
+
+        norm = torch.sum(r_mask) * hr * wr
+        loss = torch.sum(loss * r_mask) / norm
+
+        return loss, r_mask.squeeze(1)

@@ -32,7 +32,7 @@ class AverageMetric(Metric):
         if self.log_interval is not None:
             engine.add_event_handler(Events.ITERATION_STARTED, self.started)  # Reset if needed
             engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)  # Update
-            engine.add_event_handler(Events.ITERATION_COMPLETED, self.completed, name) # Compute
+            engine.add_event_handler(Events.ITERATION_COMPLETED, self.completed, name)  # Compute
         else:
             engine.add_event_handler(Events.EPOCH_STARTED, self.started) # Reset
             engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)  # Update

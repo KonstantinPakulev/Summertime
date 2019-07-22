@@ -1,16 +1,23 @@
 import os
+import sys
 import datetime
 from argparse import ArgumentParser
+
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 import torch
 from torch.nn import functional as F
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
 
 from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 from ignite.handlers import ModelCheckpoint, Timer
+from ignite.contrib.handlers.param_scheduler import LRScheduler
 
 from Net.config import cfg
 from Net.nn.model import Net
@@ -25,15 +32,27 @@ from Net.hpatches_dataset import (
     Rescale,
     ToTensor
 )
-from Net.utils.ignite_utils import AverageMetric
+from Net.utils.common_utils import print_dict
 from Net.utils.eval_utils import nearest_neighbor_match_score
+from Net.utils.ignite_utils import AverageMetric
+from Net.utils.image_utils import warp_image, erode_mask
 
 
-def train(device, log_dir, save_dir):
+# TODO. The mask should be produced by detector in future
+def create_bordering_mask(im2, homo):
+    mask = torch.ones_like(im2).to(homo.device)
+    w_mask = warp_image(mask, homo).gt(0).float()
+
+    morphed_mask = erode_mask(w_mask)
+
+    return morphed_mask
+
+
+def train(device, log_dir, checkpoint_dir):
     """
     :param device: cpu or gpu
     :param log_dir: path to the directory to store tensorboard db
-    :param save_dir: path to the directory to save checkpoints
+    :param checkpoint_dir: path to the directory to save checkpoints
     """
 
     """
@@ -50,93 +69,100 @@ def train(device, log_dir, save_dir):
                                         Rescale((960, 1280)),
                                         RandomCrop((720, 960)),
                                         Rescale((240, 320)),
-                                        ToTensor(device),
+                                        ToTensor(),
                                     ]))
 
-    val_dataset = HPatchesDataset(root_path=cfg.DATASET.VAL.root,
-                                  csv_file=cfg.DATASET.VAL.csv,
-                                  mode=VALIDATE,
-                                  split_ratios=cfg.DATASET.SPLIT,
-                                  transform=transforms.Compose([
-                                      Grayscale(),
-                                      Normalize(mean=cfg.DATASET.VAL.MEAN, std=cfg.DATASET.VAL.STD),
-                                      Rescale((960, 1280)),
-                                      RandomCrop((720, 960)),
-                                      Rescale((240, 320)),
-                                      ToTensor(device),
-                                  ]))
-
-    # TODO. Try different batch size
+    # val_dataset = HPatchesDataset(root_path=cfg.DATASET.VAL.root,
+    #                               csv_file=cfg.DATASET.VAL.csv,
+    #                               mode=VALIDATE,
+    #                               split_ratios=cfg.DATASET.SPLIT,
+    #                               transform=transforms.Compose([
+    #                                   Grayscale(),
+    #                                   Normalize(mean=cfg.DATASET.VAL.MEAN, std=cfg.DATASET.VAL.STD),
+    #                                   Rescale((960, 1280)),
+    #                                   RandomCrop((720, 960)),
+    #                                   Rescale((240, 320)),
+    #                                   ToTensor(),
+    #                               ]))
 
     train_loader = DataLoader(train_dataset,
                               batch_size=cfg.TRAIN.BATCH_SIZE,
                               shuffle=True,
                               num_workers=8)
 
-    val_loader = DataLoader(val_dataset,
-                            batch_size=cfg.VAL.BATCH_SIZE,
-                            shuffle=True,
-                            num_workers=8)
+    # val_loader = DataLoader(val_dataset,
+    #                         batch_size=cfg.VAL.BATCH_SIZE,
+    #                         shuffle=True,
+    #                         num_workers=8)
 
     """
     Model, optimizer and criterion settings. 
     Training and validation steps. 
     """
 
-    # TODO. Think of lr scheduler.
     model = Net(cfg.MODEL.GRID_SIZE, cfg.MODEL.DESCRIPTOR_SIZE).to(device)
-    # TODO. Find out which lambda is the best
     criterion = HomoHingeLoss(cfg.MODEL.GRID_SIZE, cfg.LOSS.POS_LAMBDA,
                               cfg.LOSS.POS_MARGIN, cfg.LOSS.NEG_MARGIN)
-    optimizer = Adam(model.parameters(), weight_decay=cfg.TRAIN.WEIGHT_DECAY)
+    optimizer = Adam(model.parameters(), lr=cfg.TRAIN.LR, weight_decay=cfg.TRAIN.WEIGHT_DECAY)
+    lr_scheduler = MultiStepLR(optimizer, milestones=cfg.TRAIN.SCH_STEP, gamma=cfg.TRAIN.SCH_GAMMA)
 
     def train_iteration(engine, batch):
         optimizer.zero_grad()
 
         im1, im2, homo = (
-            batch['im1'],
-            batch['im2'],
-            batch['homo']
+            batch['im1'].to(device),
+            batch['im2'].to(device),
+            batch['homo'].to(device)
         )
+
+        mask = create_bordering_mask(im2, homo)
 
         raw_desc1, desc1 = model(im1)
         raw_desc2, desc2 = model(im2)
 
         # TODO. Double training.
-        # TODO. Do not forget about masks: both for bordering artifacts and ordinary.
 
-        loss = criterion(raw_desc1, raw_desc2, homo)
+        loss, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
         loss.backward()
 
         optimizer.step()
 
-        # TODO. Purely for mac testing use desc# instead raw_desc#
+        # TODO. Purely for testing use desc# instead raw_desc#
 
         return {
             'loss': loss,
             'desc1': F.normalize(raw_desc1),
-            'desc2': F.normalize(raw_desc2)
+            'desc2': F.normalize(raw_desc2),
+            'r_mask': r_mask
         }
 
     def inference_iteration(engine, batch):
         im1, im2, homo = (
-            batch['im1'],
-            batch['im2'],
-            batch['homo']
+            batch['im1'].to(device),
+            batch['im2'].to(device),
+            batch['homo'].to(device)
         )
+
+        mask = create_bordering_mask(im2, homo)
 
         raw_desc1, desc1 = model(im1)
         raw_desc2, desc2 = model(im2)
 
-        loss = criterion(raw_desc1, raw_desc2, homo)
+        loss, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
 
-        # TODO. Purely for mac testing use desc# instead raw_desc#
+        # TODO. Purely for testing use desc# instead raw_desc#
 
         return {
             'loss': loss,
             'desc1': F.normalize(raw_desc1),
-            'desc2': F.normalize(raw_desc2)
+            'desc2': F.normalize(raw_desc2),
+            'r_mask': r_mask
         }
+
+    trainer = Engine(train_iteration)
+    # tester = Engine(inference_iteration)
+
+    trainer.add_event_handler(Events.ITERATION_STARTED, LRScheduler(lr_scheduler))
 
     """
     Visualisation utils, logging and metrics
@@ -144,14 +170,7 @@ def train(device, log_dir, save_dir):
 
     writer = SummaryWriter(logdir=log_dir)
 
-    trainer = Engine(train_iteration)
-    tester = Engine(inference_iteration)
-
     # TODO. Save the best model by providing score function and include it in files name
-
-    epoch_timer = Timer(average=False)
-    batch_timer = Timer(average=True)
-
     # TODO. Add more metric functions.
 
     """
@@ -162,7 +181,7 @@ def train(device, log_dir, save_dir):
         return x['loss']
 
     def l_nn_match(x):
-        return nearest_neighbor_match_score(x['desc1'], x['desc2'])
+        return nearest_neighbor_match_score(x['desc1'], x['desc2'], x['r_mask'])
 
     """
     Metrics for trainer
@@ -173,35 +192,41 @@ def train(device, log_dir, save_dir):
     """
     Metrics for tester
     """
-    AverageMetric(l_loss).attach(tester, 'loss')
-    AverageMetric(l_nn_match).attach(tester, 'nn_match')
+    # AverageMetric(l_loss).attach(tester, 'loss')
+    # AverageMetric(l_nn_match).attach(tester, 'nn_match')
 
     """
     Registering callbacks for sending summary to tensorboard
     """
+    epoch_timer = Timer(average=False)
+    batch_timer = Timer(average=True)
 
     @trainer.on(Events.ITERATION_COMPLETED)
     def on_iteration_completed(engine):
         if engine.state.iteration % cfg.TRAIN.LOG_INTERVAL == 0:
-            tester.run(val_loader)
+            # tester.run(val_loader)
 
             writer.add_scalar("train/loss", engine.state.metrics['loss'], engine.state.iteration)
             writer.add_scalar("train/nn_match_score", engine.state.metrics['nn_match'], engine.state.iteration)
 
-            writer.add_scalar("val/loss", tester.state.metrics['loss'], engine.state.iteration)
-            writer.add_scalar("val/nn_match_score", tester.state.metrics['nn_match'], engine.state.iteration)
+            # writer.add_scalar("val/loss", tester.state.metrics['loss'], engine.state.iteration)
+            # writer.add_scalar("val/nn_match_score", tester.state.metrics['nn_match'], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def on_epoch_completed(engine):
-        tester.run(val_loader)
+        # tester.run(val_loader)
 
         text = f"""
                 Epoch {engine.state.epoch} completed.
                 \tFinished in {datetime.timedelta(seconds=epoch_timer.value())}.
                 \tAverage time per batch is {batch_timer.value():.2f} seconds
-                \tValidation loss is {tester.state.metrics['loss']:.4f}
-                \tNN match score is: {tester.state.metrics['nn_match']:.4f}
+                \tLearning rate is: {optimizer.param_groups[0]["lr"]}
                 """
+        # \tValidation
+        # loss is {tester.state.metrics['loss']: .4f}
+        # \tNN
+        # match
+        # score is: {tester.state.metrics['nn_match']: .4f}
 
         # TODO. show matches and detections each n epochs. Images
 
@@ -224,17 +249,15 @@ def train(device, log_dir, save_dir):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--log_dir", type=str)
+    parser.add_argument("--checkpoint_dir", type=str)
 
     args = parser.parse_args()
 
-    # TODO. Probably rewrite cfg to be a yaml file or smth similar
-    #  Because we may need to use different configs to launch
-    #  Accept path to config in args and pass it to train
+    print_dict(cfg)
 
     _device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    _log_dir = args.log_dir
+    _checkpoint_dir = args.checkpoint_dir
 
-    _log_dir = os.path.join('./runs/', datetime.datetime.now().strftime("%H.%M.%S_%d.%m.%Y"))
-    if not os.path.exists(_log_dir):
-        os.mkdir(_log_dir)
-
-    train(_device, _log_dir, None)
+    train(_device, _log_dir, _checkpoint_dir)
