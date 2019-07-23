@@ -8,7 +8,6 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 import torch
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data.dataloader import DataLoader
@@ -38,7 +37,7 @@ from Net.utils.ignite_utils import AverageMetric
 from Net.utils.image_utils import warp_image, erode_mask
 
 
-# TODO. The mask should be produced by detector in future
+# TODO. The mask should be produced by detector in future. LATER
 def create_bordering_mask(im2, homo):
     mask = torch.ones_like(im2).to(homo.device)
     w_mask = warp_image(mask, homo).gt(0).float()
@@ -48,9 +47,10 @@ def create_bordering_mask(im2, homo):
     return morphed_mask
 
 
-def train(device, log_dir, checkpoint_dir):
+def train(device, num_workers, log_dir, checkpoint_dir):
     """
     :param device: cpu or gpu
+    :param num_workers: number of workers to load the data
     :param log_dir: path to the directory to store tensorboard db
     :param checkpoint_dir: path to the directory to save checkpoints
     """
@@ -72,28 +72,27 @@ def train(device, log_dir, checkpoint_dir):
                                         ToTensor(),
                                     ]))
 
-    # val_dataset = HPatchesDataset(root_path=cfg.DATASET.VAL.root,
-    #                               csv_file=cfg.DATASET.VAL.csv,
-    #                               mode=VALIDATE,
-    #                               split_ratios=cfg.DATASET.SPLIT,
-    #                               transform=transforms.Compose([
-    #                                   Grayscale(),
-    #                                   Normalize(mean=cfg.DATASET.VAL.MEAN, std=cfg.DATASET.VAL.STD),
-    #                                   Rescale((960, 1280)),
-    #                                   RandomCrop((720, 960)),
-    #                                   Rescale((240, 320)),
-    #                                   ToTensor(),
-    #                               ]))
+    val_dataset = HPatchesDataset(root_path=cfg.DATASET.VAL.root,
+                                  csv_file=cfg.DATASET.VAL.csv,
+                                  mode=VALIDATE,
+                                  split_ratios=cfg.DATASET.SPLIT,
+                                  transform=transforms.Compose([
+                                      Grayscale(),
+                                      Normalize(mean=cfg.DATASET.VAL.MEAN, std=cfg.DATASET.VAL.STD),
+                                      Rescale((960, 1280)),
+                                      Rescale((240, 320)),
+                                      ToTensor(),
+                                  ]))
 
     train_loader = DataLoader(train_dataset,
                               batch_size=cfg.TRAIN.BATCH_SIZE,
                               shuffle=True,
-                              num_workers=8)
+                              num_workers=num_workers)
 
-    # val_loader = DataLoader(val_dataset,
-    #                         batch_size=cfg.VAL.BATCH_SIZE,
-    #                         shuffle=True,
-    #                         num_workers=8)
+    val_loader = DataLoader(val_dataset,
+                            batch_size=cfg.VAL.BATCH_SIZE,
+                            shuffle=True,
+                            num_workers=num_workers)
 
     """
     Model, optimizer and criterion settings. 
@@ -117,22 +116,20 @@ def train(device, log_dir, checkpoint_dir):
 
         mask = create_bordering_mask(im2, homo)
 
-        raw_desc1, desc1 = model(im1)
-        raw_desc2, desc2 = model(im2)
+        raw_desc1, _ = model(im1)
+        raw_desc2, _ = model(im2)
 
-        # TODO. Double training.
+        # TODO. #1 Double training.
 
-        loss, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
+        loss, s, dot_desc, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
         loss.backward()
 
         optimizer.step()
 
-        # TODO. Purely for testing use desc# instead raw_desc#
-
         return {
             'loss': loss,
-            'desc1': F.normalize(raw_desc1),
-            'desc2': F.normalize(raw_desc2),
+            's': s,
+            'dot_desc': dot_desc,
             'r_mask': r_mask
         }
 
@@ -145,22 +142,20 @@ def train(device, log_dir, checkpoint_dir):
 
         mask = create_bordering_mask(im2, homo)
 
-        raw_desc1, desc1 = model(im1)
-        raw_desc2, desc2 = model(im2)
+        raw_desc1, _ = model(im1)
+        raw_desc2, _ = model(im2)
 
-        loss, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
-
-        # TODO. Purely for testing use desc# instead raw_desc#
+        loss, s, dot_desc, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
 
         return {
             'loss': loss,
-            'desc1': F.normalize(raw_desc1),
-            'desc2': F.normalize(raw_desc2),
+            's': s,
+            'dot_desc': dot_desc,
             'r_mask': r_mask
         }
 
     trainer = Engine(train_iteration)
-    # tester = Engine(inference_iteration)
+    tester = Engine(inference_iteration)
 
     trainer.add_event_handler(Events.ITERATION_STARTED, LRScheduler(lr_scheduler))
 
@@ -170,8 +165,8 @@ def train(device, log_dir, checkpoint_dir):
 
     writer = SummaryWriter(logdir=log_dir)
 
-    # TODO. Save the best model by providing score function and include it in files name
-    # TODO. Add more metric functions.
+    # TODO. Save the best model by providing score function and include it in files name. LATER
+    # TODO. Add more metric functions. LATER
 
     """
     Metric functions
@@ -181,7 +176,7 @@ def train(device, log_dir, checkpoint_dir):
         return x['loss']
 
     def l_nn_match(x):
-        return nearest_neighbor_match_score(x['desc1'], x['desc2'], x['r_mask'])
+        return nearest_neighbor_match_score(x['s'], x['dot_desc'], x['r_mask'])
 
     """
     Metrics for trainer
@@ -192,8 +187,8 @@ def train(device, log_dir, checkpoint_dir):
     """
     Metrics for tester
     """
-    # AverageMetric(l_loss).attach(tester, 'loss')
-    # AverageMetric(l_nn_match).attach(tester, 'nn_match')
+    AverageMetric(l_loss).attach(tester, 'loss')
+    AverageMetric(l_nn_match).attach(tester, 'nn_match')
 
     """
     Registering callbacks for sending summary to tensorboard
@@ -204,31 +199,29 @@ def train(device, log_dir, checkpoint_dir):
     @trainer.on(Events.ITERATION_COMPLETED)
     def on_iteration_completed(engine):
         if engine.state.iteration % cfg.TRAIN.LOG_INTERVAL == 0:
-            # tester.run(val_loader)
-
             writer.add_scalar("train/loss", engine.state.metrics['loss'], engine.state.iteration)
             writer.add_scalar("train/nn_match_score", engine.state.metrics['nn_match'], engine.state.iteration)
 
-            # writer.add_scalar("val/loss", tester.state.metrics['loss'], engine.state.iteration)
-            # writer.add_scalar("val/nn_match_score", tester.state.metrics['nn_match'], engine.state.iteration)
+        if engine.state.iteration % cfg.VAL.LOG_INTERVAL == 0:
+            tester.run(val_loader)
+
+            writer.add_scalar("val/loss", tester.state.metrics['loss'], engine.state.iteration)
+            writer.add_scalar("val/nn_match_score", tester.state.metrics['nn_match'], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def on_epoch_completed(engine):
-        # tester.run(val_loader)
+        tester.run(val_loader)
 
         text = f"""
                 Epoch {engine.state.epoch} completed.
                 \tFinished in {datetime.timedelta(seconds=epoch_timer.value())}.
                 \tAverage time per batch is {batch_timer.value():.2f} seconds
+                \tValidation loss is {tester.state.metrics['loss']: .4f}
+                \tNN match score is: {tester.state.metrics['nn_match']: .4f}
                 \tLearning rate is: {optimizer.param_groups[0]["lr"]}
                 """
-        # \tValidation
-        # loss is {tester.state.metrics['loss']: .4f}
-        # \tNN
-        # match
-        # score is: {tester.state.metrics['nn_match']: .4f}
 
-        # TODO. show matches and detections each n epochs. Images
+        # TODO. #2 show matches and detections each n epochs. Images
 
         writer.add_text("Log", text, engine.state.epoch)
 
@@ -256,8 +249,8 @@ if __name__ == "__main__":
 
     print_dict(cfg)
 
-    _device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    _device, _num_workers = (torch.device('cuda'), 8) if torch.cuda.is_available() else (torch.device('cpu'), 0)
     _log_dir = args.log_dir
     _checkpoint_dir = args.checkpoint_dir
 
-    train(_device, _log_dir, _checkpoint_dir)
+    train(_device, _num_workers, _log_dir, _checkpoint_dir)

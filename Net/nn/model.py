@@ -19,7 +19,7 @@ class Net(nn.Module):
         :return raw_desc: B x C x H/8 x W/8, desc: B x C x H x W
         """
         x = self.backbone(x)
-        raw_desc = self.descriptor(x)
+        raw_desc = F.normalize(self.descriptor(x))
 
         desc = F.interpolate(raw_desc, scale_factor=self.grid_size, mode='bilinear', align_corners=True)
         desc = F.normalize(desc)

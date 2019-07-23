@@ -54,4 +54,4 @@ class HomoHingeLoss(nn.Module):
         norm = torch.sum(r_mask) * hr * wr
         loss = torch.sum(loss * r_mask) / norm
 
-        return loss, r_mask.squeeze(1)
+        return loss, s, dot_desc, r_mask.squeeze(1)
