@@ -12,7 +12,7 @@ from torchvision import transforms
 from tensorboardX import SummaryWriter
 from ignite.engine import Engine
 
-from Net.test_env.test_config import cfg
+from Net.exp_env.test_config import cfg
 from Net.hpatches_dataset import (
     HPatchesDataset,
     TRAIN,
