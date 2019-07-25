@@ -7,28 +7,34 @@ Model settings
 """
 cfg.MODEL = EasyDict()
 cfg.MODEL.GRID_SIZE = 8
-cfg.MODEL.DESCRIPTOR_SIZE = 128
+cfg.MODEL.DESCRIPTOR_SIZE = 16
 
 """
 Loss settings
 """
 cfg.LOSS = EasyDict()
-# cfg.LOSS.POS_LAMBDA = 738.1375732421875
-cfg.LOSS.POS_LAMBDA = 250
+cfg.LOSS.POS_LAMBDA = 1
 cfg.LOSS.POS_MARGIN = 1
 cfg.LOSS.NEG_MARGIN = 0.2
+
+"""
+Metric settings
+"""
+cfg.METRIC = EasyDict()
+cfg.METRIC.THRESH = 1.0
+cfg.METRIC.RATIO = 0.7
 
 """
 Train settings
 """
 cfg.TRAIN = EasyDict()
-cfg.TRAIN.BATCH_SIZE = 8
-cfg.TRAIN.NUM_EPOCHS = 300
+cfg.TRAIN.BATCH_SIZE = 16
+cfg.TRAIN.NUM_EPOCHS = 300000
 cfg.TRAIN.LOG_INTERVAL = 2
 cfg.TRAIN.LR = 0.001
 cfg.TRAIN.WEIGHT_DECAY = 1e-5
-cfg.TRAIN.SCH_STEP = [4000]
-cfg.TRAIN.SCH_GAMMA = 0.2
+cfg.TRAIN.SCH_STEP = [12000]
+cfg.TRAIN.SCH_GAMMA = 0.1
 
 """
 Val settings

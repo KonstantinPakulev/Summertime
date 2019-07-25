@@ -159,25 +159,47 @@ def warp_image(image, homography):
     return w_image
 
 
+def apply_kernel(mask, kernel):
+    """
+    :param mask: N x 1 x H x W
+    :param kernel: 1 x 1 x ks x ks
+    :return:
+    """
+    _, _, ks, _ = kernel.size()
+
+    kernel_mask = F.conv2d(mask, weight=kernel, padding=ks // 2)
+    kernel_mask = kernel_mask.type_as(mask).to(mask.device)
+
+    return kernel_mask
+
+
 def erode_mask(mask):
     """
     :param mask: N x 1 x H x W
     """
 
-    kernel_size = 5
     morph_ellipse_kernel = torch.tensor([[[[0, 0, 1, 0, 0],
                                            [1, 1, 1, 1, 1],
                                            [1, 1, 1, 1, 1],
                                            [1, 1, 1, 1, 1],
                                            [0, 0, 1, 0, 0]]]]).type_as(mask).to(mask.device)
 
-    square = kernel_size * kernel_size
-    ones = morph_ellipse_kernel.sum()
-
-    morphed_mask = F.conv2d(mask, weight=morph_ellipse_kernel, padding=kernel_size // 2) / ones
-    morphed_mask = morphed_mask.gt(ones / square).type_as(mask).to(mask.device)
+    morphed_mask = apply_kernel(mask, morph_ellipse_kernel) / morph_ellipse_kernel.sum()
+    morphed_mask = morphed_mask.ge(0.8).float()
 
     return morphed_mask
+
+
+def dilate_mask(mask):
+    """
+    :param mask: N x 1 x H x W
+    """
+
+    dilate_kernel = torch.ones((1, 1, 3, 3)).type_as(mask).to(mask.device)
+
+    dilated_mask = apply_kernel(mask, dilate_kernel).gt(0).float()
+
+    return dilated_mask
 
 
 def space_to_depth(image, grid_size):

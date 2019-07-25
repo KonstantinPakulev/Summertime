@@ -69,7 +69,6 @@ if __name__ == "__main__":
     def to_cv2_dmatch(m):
         return cv2.DMatch(m, m, m, m)
 
-
     def reverse_img(img):
         """
         reverse image from tensor to cv2 format

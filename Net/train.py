@@ -32,7 +32,9 @@ from Net.hpatches_dataset import (
     ToTensor
 )
 from Net.utils.common_utils import print_dict
-from Net.utils.eval_utils import nearest_neighbor_match_score
+from Net.utils.eval_utils import (nearest_neighbor_match_score,
+                                  nearest_neighbor_thresh_match_score,
+                                  nearest_neighbor_ratio_match_score)
 from Net.utils.ignite_utils import AverageMetric
 from Net.utils.image_utils import warp_image, erode_mask
 
@@ -113,24 +115,34 @@ def train(device, num_workers, log_dir, checkpoint_dir):
             batch['im2'].to(device),
             batch['homo'].to(device)
         )
+        homo_inv = homo.inverse()
 
-        mask = create_bordering_mask(im2, homo)
+        mask1 = create_bordering_mask(im2, homo)
+        mask2 = create_bordering_mask(im1, homo_inv)
 
-        raw_desc1, _ = model(im1)
-        raw_desc2, _ = model(im2)
+        des1 = model(im1)
+        des2 = model(im2)
 
-        # TODO. #1 Double training.
+        loss1, s1, dot_des1, r_mask1 = criterion(des1, des2, homo, mask1)
+        loss2, s2, dot_des2, r_mask2 = criterion(des2, des1, homo_inv, mask2)
 
-        loss, s, dot_desc, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
+        loss = (loss1 + loss2) / 2
         loss.backward()
 
         optimizer.step()
 
         return {
             'loss': loss,
-            's': s,
-            'dot_desc': dot_desc,
-            'r_mask': r_mask
+
+            'des1': des1,
+            's1': s1,
+            'dot_des1': dot_des1,
+            'r_mask1': r_mask1,
+
+            'des2': des2,
+            's2': s2,
+            'dot_des2': dot_des2,
+            'r_mask2': r_mask2
         }
 
     def inference_iteration(engine, batch):
@@ -139,19 +151,31 @@ def train(device, num_workers, log_dir, checkpoint_dir):
             batch['im2'].to(device),
             batch['homo'].to(device)
         )
+        homo_inv = homo.inverse()
 
-        mask = create_bordering_mask(im2, homo)
+        mask1 = create_bordering_mask(im2, homo)
+        mask2 = create_bordering_mask(im1, homo_inv)
 
-        raw_desc1, _ = model(im1)
-        raw_desc2, _ = model(im2)
+        des1 = model(im1)
+        des2 = model(im2)
 
-        loss, s, dot_desc, r_mask = criterion(raw_desc1, raw_desc2, homo, mask)
+        loss1, s1, dot_des1, r_mask1 = criterion(des1, des2, homo, mask1)
+        loss2, s2, dot_des2, r_mask2 = criterion(des2, des1, homo_inv, mask2)
+
+        loss = (loss1 + loss2) / 2
 
         return {
             'loss': loss,
-            's': s,
-            'dot_desc': dot_desc,
-            'r_mask': r_mask
+
+            'des1': des1,
+            's1': s1,
+            'dot_des1': dot_des1,
+            'r_mask1': r_mask1,
+
+            'des2': des2,
+            's2': s2,
+            'dot_des2': dot_des2,
+            'r_mask2': r_mask2
         }
 
     trainer = Engine(train_iteration)
@@ -166,7 +190,6 @@ def train(device, num_workers, log_dir, checkpoint_dir):
     writer = SummaryWriter(logdir=log_dir)
 
     # TODO. Save the best model by providing score function and include it in files name. LATER
-    # TODO. Add more metric functions. LATER
 
     """
     Metric functions
@@ -176,19 +199,53 @@ def train(device, num_workers, log_dir, checkpoint_dir):
         return x['loss']
 
     def l_nn_match(x):
-        return nearest_neighbor_match_score(x['s'], x['dot_desc'], x['r_mask'])
+        ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'])
+        ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'])
+        return (ms1 + ms2) / 2
+
+    def l_nn_match_2(x):
+        ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'], 2)
+        ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'], 2)
+        return (ms1 + ms2) / 2
+
+    def l_nn_match_4(x):
+        ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'], 4)
+        ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'], 4)
+        return (ms1 + ms2) / 2
+
+    def l_nnt_match(x):
+        ms1 = nearest_neighbor_thresh_match_score(x['des1'], x['des2'], cfg.METRIC.THRESH,
+                                                  x['s1'], x['dot_des1'], x['r_mask1'])
+        ms2 = nearest_neighbor_thresh_match_score(x['des2'], x['des1'], cfg.METRIC.THRESH,
+                                                  x['s2'], x['dot_des2'], x['r_mask2'])
+        return (ms1 + ms2) / 2
+
+    def l_nnr_match(x):
+        ms1 = nearest_neighbor_ratio_match_score(x['des1'], x['des2'], cfg.METRIC.RATIO,
+                                                 x['s1'], x['dot_des1'], x['r_mask1'])
+        ms2 = nearest_neighbor_ratio_match_score(x['des2'], x['des1'], cfg.METRIC.RATIO,
+                                                  x['s2'], x['dot_des2'], x['r_mask2'])
+        return (ms1 + ms2) / 2
 
     """
     Metrics for trainer
     """
     AverageMetric(l_loss, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'loss')
     AverageMetric(l_nn_match, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'nn_match')
+    AverageMetric(l_nn_match_2, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'nn_match_2')
+    AverageMetric(l_nn_match_4, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'nn_match_4')
+    AverageMetric(l_nnt_match, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'nnt_match')
+    AverageMetric(l_nnr_match, cfg.TRAIN.LOG_INTERVAL).attach(trainer, 'nnr_match')
 
     """
     Metrics for tester
     """
     AverageMetric(l_loss).attach(tester, 'loss')
     AverageMetric(l_nn_match).attach(tester, 'nn_match')
+    AverageMetric(l_nn_match_2, cfg.TRAIN.LOG_INTERVAL).attach(tester, 'nn_match_2')
+    AverageMetric(l_nn_match_4, cfg.TRAIN.LOG_INTERVAL).attach(tester, 'nn_match_4')
+    AverageMetric(l_nnt_match, cfg.TRAIN.LOG_INTERVAL).attach(tester, 'nnt_match')
+    AverageMetric(l_nnr_match, cfg.TRAIN.LOG_INTERVAL).attach(tester, 'nnr_match')
 
     """
     Registering callbacks for sending summary to tensorboard
@@ -201,12 +258,20 @@ def train(device, num_workers, log_dir, checkpoint_dir):
         if engine.state.iteration % cfg.TRAIN.LOG_INTERVAL == 0:
             writer.add_scalar("train/loss", engine.state.metrics['loss'], engine.state.iteration)
             writer.add_scalar("train/nn_match_score", engine.state.metrics['nn_match'], engine.state.iteration)
+            writer.add_scalar("train/nn_match_score_2", engine.state.metrics['nn_match_2'], engine.state.iteration)
+            writer.add_scalar("train/nn_match_score_4", engine.state.metrics['nn_match_4'], engine.state.iteration)
+            writer.add_scalar("train/nnt_match_score", engine.state.metrics['nnt_match'], engine.state.iteration)
+            writer.add_scalar("train/nnr_match_score", engine.state.metrics['nnr_match'], engine.state.iteration)
 
         if engine.state.iteration % cfg.VAL.LOG_INTERVAL == 0:
             tester.run(val_loader)
 
             writer.add_scalar("val/loss", tester.state.metrics['loss'], engine.state.iteration)
             writer.add_scalar("val/nn_match_score", tester.state.metrics['nn_match'], engine.state.iteration)
+            writer.add_scalar("val/nn_match_score_2", tester.state.metrics['nn_match_2'], engine.state.iteration)
+            writer.add_scalar("val/nn_match_score_4", tester.state.metrics['nn_match_4'], engine.state.iteration)
+            writer.add_scalar("val/nnt_match_score", tester.state.metrics['nnt_match'], engine.state.iteration)
+            writer.add_scalar("val/nnr_match_score", tester.state.metrics['nnr_match'], engine.state.iteration)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def on_epoch_completed(engine):
@@ -220,6 +285,7 @@ def train(device, num_workers, log_dir, checkpoint_dir):
                 \tNN match score is: {tester.state.metrics['nn_match']: .4f}
                 \tLearning rate is: {optimizer.param_groups[0]["lr"]}
                 """
+        # TODO. Fancy printing of all other metrics later. REALLY LATER. ALMOST LAST.
 
         # TODO. #2 show matches and detections each n epochs. Images
 

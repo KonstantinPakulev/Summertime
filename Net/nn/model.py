@@ -19,12 +19,12 @@ class Net(nn.Module):
         :param x: B x C x H x W
         """
         x = self.backbone(x)
-        raw_desc = self.descriptor(x)
+        raw_des = self.descriptor(x)
 
         if self.train_mode:
-            desc = F.normalize(raw_desc)
+            des = F.normalize(raw_des)
         else:
-            desc = F.interpolate(raw_desc, scale_factor=self.grid_size, mode='bilinear', align_corners=True)
-            desc = F.normalize(desc)
+            des = F.interpolate(raw_des, scale_factor=self.grid_size, mode='bilinear', align_corners=True)
+            des = F.normalize(des)
 
-        return desc
+        return des

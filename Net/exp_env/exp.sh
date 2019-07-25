@@ -13,4 +13,4 @@ echo "Checkpoints dir:: ${checkpoint_dir}"
 stdout=${log_dir}"/out.out"
 stderr=${log_dir}"/out.err"
 
-python3 /home/konstantin/PycharmProjects/Summertime/Net/test_env/test.py --log_dir=${log_dir} --checkpoint_dir=${checkpoint_dir}
+python3 /home/konstantin/PycharmProjects/Summertime/Net/exp_env/exp.py --log_dir=${log_dir}
