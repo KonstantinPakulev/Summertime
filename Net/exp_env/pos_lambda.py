@@ -25,7 +25,7 @@ from Net.hpatches_dataset import (
     ToTensor
 )
 from Net.utils.ignite_utils import AverageMetric
-from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, warp_image, dilate_mask
+from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, warp_image, dilate_filter
 
 
 def calculate_ratio(des_size, homo, cfg):
@@ -46,7 +46,7 @@ def calculate_ratio(des_size, homo, cfg):
 
     # Create negative correspondences around positives
     ns = s.clone().view(-1, 1, h, w)
-    ns = dilate_mask(ns).view(n, h, w, h, w)
+    ns = dilate_filter(ns).view(n, h, w, h, w)
     ns = ns - s
 
     pos = s.sum()
@@ -58,8 +58,6 @@ def calculate_ratio(des_size, homo, cfg):
 def calculate_pos_lambda(device, cfg):
     dataset = HPatchesDataset(root_path=cfg.DATASET.view.root,
                               csv_file=cfg.DATASET.view.csv,
-                              mode=TRAIN,
-                              split_ratios=cfg.DATASET.SPLIT,
                               transform=transforms.Compose([
                                   Grayscale(),
                                   Normalize(mean=cfg.DATASET.view.MEAN, std=cfg.DATASET.view.STD),

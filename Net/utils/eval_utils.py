@@ -1,4 +1,67 @@
+import os
+import cv2
+import numpy as np
+
 import torch
+from torchvision.utils import make_grid
+
+"""
+Mappings to process endpoint and calculate metrics
+"""
+
+
+def l_loss(x):
+    return x['loss']
+
+
+def l_det_loss(x):
+    return x['det_loss']
+
+
+def l_des_loss(x):
+    return x['des_loss']
+
+
+def l_collect_show(x):
+    return x['im1'], x['im2'], x['top_k_mask1'], x['top_k_mask2']
+
+
+# def l_nn_match(x):
+#     ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'])
+#     ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'])
+#     return (ms1 + ms2) / 2
+
+
+# def l_nn_match_2(x):
+#     ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'], 2)
+#     ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'], 2)
+#     return (ms1 + ms2) / 2
+
+
+# def l_nn_match_4(x):
+#     ms1 = nearest_neighbor_match_score(x['s1'], x['dot_des1'], x['r_mask1'], 4)
+#     ms2 = nearest_neighbor_match_score(x['s2'], x['dot_des2'], x['r_mask2'], 4)
+#     return (ms1 + ms2) / 2
+
+
+# def l_nnt_match(x):
+#     ms1 = nearest_neighbor_thresh_match_score(x['des1'], x['des2'], cfg.METRIC.THRESH,
+#                                               x['s1'], x['dot_des1'], x['r_mask1'])
+#     ms2 = nearest_neighbor_thresh_match_score(x['des2'], x['des1'], cfg.METRIC.THRESH,
+#                                               x['s2'], x['dot_des2'], x['r_mask2'])
+#     return (ms1 + ms2) / 2
+
+# def l_nnr_match(x):
+#     ms1 = nearest_neighbor_ratio_match_score(x['des1'], x['des2'], cfg.METRIC.RATIO,
+#                                              x['s1'], x['dot_des1'], x['r_mask1'])
+#     ms2 = nearest_neighbor_ratio_match_score(x['des2'], x['des1'], cfg.METRIC.RATIO,
+#                                              x['s2'], x['dot_des2'], x['r_mask2'])
+#     return (ms1 + ms2) / 2
+
+
+"""
+Evaluation functions
+"""
 
 
 def collect_ids(dot_des, top_k):
@@ -157,4 +220,52 @@ def nearest_neighbor_ratio_match_score(des1, des2, rt, s, dot_des, r_mask):
 
     return nnr_ms
 
+
+"""
+Results visualisation
+"""
+
+
+def torch2cv(img):
+    """
+    :type img: 1 x C x H x W
+    """
+    img = img.permute(0, 2, 3, 1)[0].cpu().detach().numpy()
+    img = (img * 255).astype(np.uint8)
+    return img
+
+
+def kp2cv(kp):
+    """
+    :type kp: K x 4
+    """
+    return cv2.KeyPoint(kp[3], kp[2], 0)
+
+
+def plot_keypoints(writer, epoch, outputs):
+    """
+    :param writer: SummaryWriter
+    :param epoch: Current train epoch
+    :param outputs: list of tuples with all necessary info
+    """
+    for i, (im1, im2, top_k_mask1, top_k_mask2) in enumerate(outputs):
+        im1 = torch2cv(im1)
+        im2 = torch2cv(im2)
+
+        kp1 = top_k_mask1.nonzero().cpu().detach().numpy()
+        kp2 = top_k_mask2.nonzero().cpu().detach().numpy()
+
+        kp1 = list(map(kp2cv, kp1))
+        kp2 = list(map(kp2cv, kp2))
+
+        im1_kp = cv2.drawKeypoints(im1, kp1, None, color=(0, 255, 0))
+        im2_kp = cv2.drawKeypoints(im2, kp2, None, color=(0, 255, 0))
+
+        im1_kp = im1_kp.transpose((2, 0, 1))
+        im1_kp = torch.from_numpy(im1_kp).unsqueeze(0)
+
+        im2_kp = im2_kp.transpose((2, 0, 1))
+        im2_kp = torch.from_numpy(im2_kp).unsqueeze(0)
+
+        writer.add_image(f"s{i}_keypoints", make_grid(torch.cat((im1_kp, im2_kp), dim=0)), epoch)
 

@@ -2,6 +2,7 @@
   <dictionary name="konstantin">
     <words>
       <w>homography</w>
+      <w>keypoints</w>
       <w>logits</w>
     </words>
   </dictionary>

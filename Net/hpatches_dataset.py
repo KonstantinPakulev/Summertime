@@ -11,34 +11,22 @@ from Net.utils.image_utils import resize_image, resize_homography, crop_image, c
 # Available modes
 TRAIN = 'train'
 VALIDATE = 'validate'
-TEST = 'test'
+VALIDATE_SHOW = 'validate_show'
 
 
 class HPatchesDataset(Dataset):
 
-    def __init__(self, root_path, csv_file, mode, split_ratios, transform=None):
+    def __init__(self, root_path, csv_file, transform=None, include_originals=False):
         """
         :param root_path: Path to the dataset folder
         :param csv_file: The name of csv file with annotations
-        :param mode: One of available modes
-        :param split_ratios: Ratios to split dataset for each mode
         :param transform: Transforms
         """
 
         self.root_path = root_path
         self.annotations = pd.read_csv(os.path.join(self.root_path, csv_file))
         self.transform = transform
-
-        l = len(self.annotations)
-        s0 = int(l * split_ratios[0])
-        s1 = int(l * split_ratios[1])
-
-        if mode == TRAIN:
-            self.annotations = self.annotations[:s0]
-        elif mode == VALIDATE:
-            self.annotations = self.annotations[s0:s0 + s1]
-        elif mode == TEST:
-            self.annotations = self.annotations[s0 + s1:]
+        self.include_originals = include_originals
 
     def __len__(self):
         return len(self.annotations)
@@ -57,6 +45,10 @@ class HPatchesDataset(Dataset):
         homo = np.asmatrix(self.annotations.iloc[id, 3:].values).astype(np.float).reshape(3, 3)
 
         item = {"im1": im1, "im2": im2, "homo": homo}
+
+        if self.include_originals:
+            item["orig1"] = im1.copy()
+            item["orig2"] = im2.copy()
 
         if self.transform:
             item = self.transform(item)
@@ -112,6 +104,10 @@ class Rescale(object):
         item["im1"] = im1
         item["im2"] = im2
         item["homo"] = homo
+
+        if "orig1" in item:
+            item["orig1"], _ = resize_image(item["orig1"], self.output_size)
+            item["orig2"], _ = resize_image(item["orig2"], self.output_size)
 
         return item
 
@@ -173,7 +169,7 @@ class RandomCrop:
         return item
 
 
-class ToTensor():
+class ToTensor:
 
     def __call__(self, item):
         im1, im2, homo = (
@@ -191,5 +187,12 @@ class ToTensor():
         item["im1"] = torch.from_numpy(im1).float()
         item["im2"] = torch.from_numpy(im2).float()
         item["homo"] = torch.from_numpy(np.asarray(homo)).float()
+
+        if "orig1" in item:
+            orig1 = item["orig1"].transpose((2, 0, 1))
+            orig2 = item["orig2"].transpose((2, 0, 1))
+
+            item["orig1"] = torch.from_numpy(orig1)
+            item["orig2"] = torch.from_numpy(orig2)
 
         return item

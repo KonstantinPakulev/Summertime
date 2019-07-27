@@ -34,6 +34,28 @@ class AverageMetric(Metric):
             engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)  # Update
             engine.add_event_handler(Events.ITERATION_COMPLETED, self.completed, name)  # Compute
         else:
-            engine.add_event_handler(Events.EPOCH_STARTED, self.started) # Reset
+            engine.add_event_handler(Events.EPOCH_STARTED, self.started)  # Reset
             engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)  # Update
             engine.add_event_handler(Events.EPOCH_COMPLETED, self.completed, name)  # Compute
+
+
+class CollectMetric(Metric):
+
+    def __init__(self, output_transform):
+        self.outputs = []
+
+        super().__init__(output_transform)
+
+    def reset(self):
+        self.outputs = []
+
+    def update(self, output):
+        self.outputs += [output]
+
+    def compute(self):
+        return self.outputs
+
+    def attach(self, engine, name):
+        engine.add_event_handler(Events.EPOCH_STARTED, self.started)  # Reset
+        engine.add_event_handler(Events.ITERATION_COMPLETED, self.iteration_completed)  # Update
+        engine.add_event_handler(Events.EPOCH_COMPLETED, self.completed, name)  # Compute
