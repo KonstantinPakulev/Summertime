@@ -1,9 +1,22 @@
-import os
 import cv2
 import numpy as np
 
 import torch
 from torchvision.utils import make_grid
+
+from Net.hpatches_dataset import (S_IMAGE1,
+                                  S_IMAGE2)
+
+# Eval metrics names
+LOSS = 'loss'
+DET_LOSS = 'det_loss'
+DES_LOSS = 'des_loss'
+SHOW = 'show'
+
+KP1 = 'kp1'
+KP2 = 'kp2'
+DESC1 = 'desc1'
+DESC2 = 'desc2'
 
 """
 Mappings to process endpoint and calculate metrics
@@ -11,19 +24,19 @@ Mappings to process endpoint and calculate metrics
 
 
 def l_loss(x):
-    return x['loss']
+    return x[LOSS]
 
 
 def l_det_loss(x):
-    return x['det_loss']
+    return x[DET_LOSS]
 
 
 def l_des_loss(x):
-    return x['des_loss']
+    return x[DES_LOSS]
 
 
 def l_collect_show(x):
-    return x['im1'], x['im2'], x['top_k_mask1'], x['top_k_mask2']
+    return x[S_IMAGE1], x[S_IMAGE2], x[KP1], x[KP2]
 
 
 # def l_nn_match(x):
@@ -62,6 +75,10 @@ def l_collect_show(x):
 """
 Evaluation functions
 """
+
+#TODO. Rewrite for working with lists of descriptors. Calculate distance matrix from scratch.
+#  Determine correspondeces via nn coordinates keypoints. There should be a separate function for collection ids, correct ids.
+#  I.e. tensors of shape N x 4.
 
 
 def collect_ids(dot_des, top_k):
@@ -248,24 +265,24 @@ def plot_keypoints(writer, epoch, outputs):
     :param epoch: Current train epoch
     :param outputs: list of tuples with all necessary info
     """
-    for i, (im1, im2, top_k_mask1, top_k_mask2) in enumerate(outputs):
-        im1 = torch2cv(im1)
-        im2 = torch2cv(im2)
+    # TODO. Also show matches. You will need descriptors and matching indexes tensor.
+    for i, (s_image1, s_image2, kp1, kp1) in enumerate(outputs):
+        s_image1 = torch2cv(s_image1)
+        s_image2 = torch2cv(s_image2)
 
-        kp1 = top_k_mask1.nonzero().cpu().detach().numpy()
-        kp2 = top_k_mask2.nonzero().cpu().detach().numpy()
+        kp1 = kp1.cpu().detach().numpy()
+        kp2 = kp1.cpu().detach().numpy()
 
         kp1 = list(map(kp2cv, kp1))
         kp2 = list(map(kp2cv, kp2))
 
-        im1_kp = cv2.drawKeypoints(im1, kp1, None, color=(0, 255, 0))
-        im2_kp = cv2.drawKeypoints(im2, kp2, None, color=(0, 255, 0))
+        s_image1_kp = cv2.drawKeypoints(s_image1, kp1, None, color=(0, 255, 0))
+        s_image2_kp = cv2.drawKeypoints(s_image2, kp2, None, color=(0, 255, 0))
 
-        im1_kp = im1_kp.transpose((2, 0, 1))
-        im1_kp = torch.from_numpy(im1_kp).unsqueeze(0)
+        s_image1_kp = s_image1_kp.transpose((2, 0, 1))
+        s_image1_kp = torch.from_numpy(s_image1_kp).unsqueeze(0)
 
-        im2_kp = im2_kp.transpose((2, 0, 1))
-        im2_kp = torch.from_numpy(im2_kp).unsqueeze(0)
+        s_image2_kp = s_image2_kp.transpose((2, 0, 1))
+        s_image2_kp = torch.from_numpy(s_image2_kp).unsqueeze(0)
 
-        writer.add_image(f"s{i}_keypoints", make_grid(torch.cat((im1_kp, im2_kp), dim=0)), epoch)
-
+        writer.add_image(f"s{i}_keypoints", make_grid(torch.cat((s_image1_kp, s_image2_kp), dim=0)), epoch)

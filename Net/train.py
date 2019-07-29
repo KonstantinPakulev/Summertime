@@ -21,9 +21,17 @@ from Net.nn.model import Net
 from Net.nn.criterion import HomoMSELoss, HomoHingeLoss
 from Net.hpatches_dataset import (
     HPatchesDataset,
+
     TRAIN,
     VALIDATE,
     VALIDATE_SHOW,
+
+    IMAGE1,
+    IMAGE2,
+    HOMO,
+    S_IMAGE1,
+    S_IMAGE2,
+
     Grayscale,
     Normalize,
     RandomCrop,
@@ -32,13 +40,24 @@ from Net.hpatches_dataset import (
 )
 
 from Net.utils.common_utils import print_dict
-from Net.utils.eval_utils import (l_loss,
+from Net.utils.eval_utils import (LOSS,
+                                  DET_LOSS,
+                                  DES_LOSS,
+                                  SHOW,
+
+                                  KP1,
+                                  KP2,
+                                  DESC1,
+                                  DESC2,
+
+                                  l_loss,
                                   l_det_loss,
                                   l_des_loss,
                                   l_collect_show,
-                                  plot_keypoints)
 
+                                  plot_keypoints)
 from Net.utils.ignite_utils import AverageMetric, CollectMetric
+from Net.utils.model_utils import sample_descriptors
 
 
 def h_patches_dataset(mode):
@@ -70,9 +89,9 @@ def h_patches_dataset(mode):
 
 
 def attach_metrics(engine):
-    AverageMetric(l_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, 'loss')
-    AverageMetric(l_det_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, 'det_loss')
-    AverageMetric(l_des_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, 'des_loss')
+    AverageMetric(l_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, LOSS)
+    AverageMetric(l_det_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, DET_LOSS)
+    AverageMetric(l_des_loss, cfg.TRAIN.LOG_INTERVAL).attach(engine, DES_LOSS)
 
 
 def output_metrics(writer, data_engine, state_engine, tag):
@@ -82,9 +101,9 @@ def output_metrics(writer, data_engine, state_engine, tag):
     :param state_engine: Engine to take current state from
     :param tag: Category to write data to
     """
-    writer.add_scalar(f"{tag}/loss", data_engine.state.metrics['loss'], state_engine.state.iteration)
-    writer.add_scalar(f"{tag}/det_loss", data_engine.state.metrics['det_loss'], state_engine.state.iteration)
-    writer.add_scalar(f"{tag}/des_loss", data_engine.state.metrics['des_loss'], state_engine.state.iteration)
+    writer.add_scalar(f"{tag}/{LOSS}", data_engine.state.metrics[LOSS], state_engine.state.iteration)
+    writer.add_scalar(f"{tag}/{DET_LOSS}", data_engine.state.metrics[DET_LOSS], state_engine.state.iteration)
+    writer.add_scalar(f"{tag}/{DES_LOSS}", data_engine.state.metrics[DES_LOSS], state_engine.state.iteration)
 
 
 def train(device, num_workers, log_dir, checkpoint_dir):
@@ -127,21 +146,21 @@ def train(device, num_workers, log_dir, checkpoint_dir):
     optimizer = Adam(model.parameters(), lr=cfg.TRAIN.LR, weight_decay=cfg.TRAIN.WEIGHT_DECAY)
 
     def iteration(engine, batch):
-        im1, im2, homo = (
-            batch['im1'].to(device),
-            batch['im2'].to(device),
-            batch['homo'].to(device)
+        image1, image1, homo = (
+            batch[IMAGE1].to(device),
+            batch[IMAGE2].to(device),
+            batch[HOMO].to(device)
         )
         homo_inv = homo.inverse()
 
-        det1, des1 = model(im1)
-        det2, des2 = model(im2)
+        score1, desc1 = model(image1)
+        score2, desc2 = model(image1)
 
-        det_loss1, top_k_mask1, vis_mask1 = det_criterion(det1, det2, homo)
-        det_loss2, top_k_mask2, vis_mask2 = det_criterion(det2, det1, homo_inv)
+        det_loss1, kp1, vis_mask1 = det_criterion(score1, score2, homo)
+        det_loss2, kp2, vis_mask2 = det_criterion(score2, score1, homo_inv)
 
-        des_loss1, s1, dot_des1 = des_criterion(des1, des2, homo, vis_mask1)
-        des_loss2, s2, dot_des2 = des_criterion(des2, des1, homo_inv, vis_mask2)
+        des_loss1 = des_criterion(desc1, desc2, homo, vis_mask1)
+        des_loss2 = des_criterion(desc2, desc1, homo_inv, vis_mask2)
 
         det_loss = (det_loss1 + det_loss2) / 2
         des_loss = cfg.LOSS.DES_LAMBDA * (des_loss1 + des_loss2) / 2
@@ -149,51 +168,73 @@ def train(device, num_workers, log_dir, checkpoint_dir):
         loss = det_loss + des_loss
 
         return {
-            'loss': loss,
-            'det_loss': det_loss,
-            'des_loss': des_loss,
+            LOSS: loss,
+            DET_LOSS: det_loss,
+            DES_LOSS: des_loss,
 
-            'top_k_mask1': top_k_mask1,
-            's1': s1,
-            'dot_des1': dot_des1,
+            KP1: kp1,
+            KP2: kp2,
 
-            'top_k_mask2': top_k_mask2,
-            's2': s2,
-            'dot_des2': dot_des2
+            DESC1: desc1,
+            DESC2: desc2
         }
 
     def train_iteration(engine, batch):
         optimizer.zero_grad()
 
         endpoint = iteration(engine, batch)
-
-        endpoint['loss'].backward()
+        endpoint[LOSS].backward()
 
         optimizer.step()
 
+        # desc1 = sample_descriptors(endpoint[DESC1], endpoint[KP1], cfg.MODEL.GRID_SIZE)
+        # desc2 = sample_descriptors(endpoint[DESC2], endpoint[KP2], cfg.MODEL.GRID_SIZE)
+
         return {
-            'loss': endpoint['loss'],
-            'det_loss': endpoint['det_loss'],
-            'des_loss': endpoint['des_loss']
+            LOSS: endpoint[LOSS],
+            DET_LOSS: endpoint[DET_LOSS],
+            DES_LOSS: endpoint[DES_LOSS],
+
+            KP1: endpoint[KP1],
+            KP2: endpoint[KP2],
+
+            # DESC1: desc1,
+            # DESC2: desc2
         }
 
     def validation_iteration(engine, batch):
         endpoint = iteration(engine, batch)
 
+        # desc1 = sample_descriptors(endpoint[DESC1], endpoint[KP1], cfg.MODEL.GRID_SIZE)
+        # desc2 = sample_descriptors(endpoint[DESC2], endpoint[KP2], cfg.MODEL.GRID_SIZE)
+
         return {
-            'loss': endpoint['loss'],
-            'det_loss': endpoint['det_loss'],
-            'des_loss': endpoint['des_loss']
+            LOSS: endpoint[LOSS],
+            DET_LOSS: endpoint[DET_LOSS],
+            DES_LOSS: endpoint[DES_LOSS],
+
+            KP1: endpoint[KP1],
+            KP2: endpoint[KP2],
+
+            # DESC1: desc1,
+            # DESC2: desc2
         }
 
     def validation_show_iteration(engine, batch):
         endpoint = iteration(engine, batch)
 
+        # desc1 = sample_descriptors(endpoint[DESC1], endpoint[KP1], cfg.MODEL.GRID_SIZE)
+        # desc2 = sample_descriptors(endpoint[DESC2], endpoint[KP2], cfg.MODEL.GRID_SIZE)
+
         return {
-            'im1': batch['orig1'],
-            'im2': batch['orig2'],
-            'top_k_mask1': endpoint['top_k_mask1'],
-            'top_k_mask2': endpoint['top_k_mask2']
+            S_IMAGE1: batch[S_IMAGE1],
+            S_IMAGE2: batch[S_IMAGE2],
+
+            KP1: endpoint[KP1],
+            KP2: endpoint[KP2],
+
+            # DESC1: desc1,
+            # DESC2: desc2
         }
 
     trainer = Engine(train_iteration)
@@ -210,7 +251,7 @@ def train(device, num_workers, log_dir, checkpoint_dir):
 
     attach_metrics(trainer)
     attach_metrics(validator)
-    CollectMetric(l_collect_show).attach(validator_show, 'show')
+    CollectMetric(l_collect_show).attach(validator_show, SHOW)
 
     """
     Registering callbacks for sending summary to tensorboard
@@ -231,8 +272,7 @@ def train(device, num_workers, log_dir, checkpoint_dir):
     def on_epoch_completed(engine):
         if engine.state.epoch % cfg.VAL_SHOW.LOG_INTERVAL == 0:
             validator_show.run(val_show_loader)
-            # TODO. #2 show matches each n epochs. Images
-            plot_keypoints(writer, engine.state.epoch, validator_show.state.metrics['show'])
+            plot_keypoints(writer, engine.state.epoch, validator_show.state.metrics[SHOW])
 
         # TODO. Fancy printing of all other metrics later. REALLY LATER. ALMOST LAST.
         # validator.run(val_loader)

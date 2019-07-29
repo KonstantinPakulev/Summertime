@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 
 """
 VGG based backbone, detector and descriptor
@@ -44,3 +45,37 @@ def make_vgg_descriptor_head(descriptor_size):
     layers += make_vgg_block(256, descriptor_size, 1, 0, None)
 
     return nn.Sequential(*layers)
+
+
+"""
+Tensor functions
+"""
+
+
+def space_to_depth(tensor, grid_size):
+    """
+    :param tensor: N x C x H x W
+    :param grid_size: int
+    """
+    n, c, h, w = tensor.size()
+
+    hr = h // grid_size
+    wr = w // grid_size
+
+    x = tensor.view(n, c, hr, grid_size, wr, grid_size)
+    x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # N x grid_size x grid_size x C x Hr x Wr
+    x = x.view(n, c * (grid_size ** 2), hr, wr)  # N x C * grid_size^2 x Hr x Wr
+
+    return x
+
+
+def sample_descriptors(desc, kp, grid_size):
+    """
+    :param desc: N x C x H x W
+    :param kp: N x 4
+    :param grid_size: int
+    """
+    desc = F.interpolate(desc, scale_factor=grid_size, mode='bilinear', align_corners=True)
+    desc = F.normalize(desc)
+
+    return  desc[kp[:, 0], :, kp[:, 2], kp[:, 3]]

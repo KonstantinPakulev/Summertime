@@ -13,6 +13,14 @@ TRAIN = 'train'
 VALIDATE = 'validate'
 VALIDATE_SHOW = 'validate_show'
 
+# Batch variables
+IMAGE1 = 'image1'
+IMAGE2 = 'image2'
+HOMO = 'homo'
+S_IMAGE1 = 's_image1'
+S_IMAGE2 = 's_image2'
+
+
 
 class HPatchesDataset(Dataset):
 
@@ -39,16 +47,16 @@ class HPatchesDataset(Dataset):
         im1_path = os.path.join(self.root_path, folder, im1_name)
         im2_path = os.path.join(self.root_path, folder, im2_name)
 
-        im1 = io.imread(im1_path)
-        im2 = io.imread(im2_path)
+        image1 = io.imread(im1_path)
+        image2 = io.imread(im2_path)
 
         homo = np.asmatrix(self.annotations.iloc[id, 3:].values).astype(np.float).reshape(3, 3)
 
-        item = {"im1": im1, "im2": im2, "homo": homo}
+        item = {IMAGE1: image1, IMAGE2: image2, HOMO: homo}
 
         if self.include_originals:
-            item["orig1"] = im1.copy()
-            item["orig2"] = im2.copy()
+            item[S_IMAGE1] = image1.copy()
+            item[S_IMAGE2] = image2.copy()
 
         if self.transform:
             item = self.transform(item)
@@ -59,8 +67,8 @@ class HPatchesDataset(Dataset):
 class Grayscale(object):
 
     def __call__(self, item):
-        item["im1"] = np.expand_dims(color.rgb2gray(item["im1"]), -1)
-        item["im2"] = np.expand_dims(color.rgb2gray(item["im2"]), -1)
+        item[IMAGE1] = np.expand_dims(color.rgb2gray(item[IMAGE1]), -1)
+        item[IMAGE2] = np.expand_dims(color.rgb2gray(item[IMAGE2]), -1)
         return item
 
 
@@ -73,10 +81,10 @@ class Normalize(object):
         self.mean = mean
         self.std = std
 
-    def __call__(self, sample):
-        sample["im1"] = (sample["im1"] - self.mean) / self.std
-        sample["im2"] = (sample["im2"] - self.mean) / self.std
-        return sample
+    def __call__(self, item):
+        item[IMAGE1] = (item[IMAGE1] - self.mean) / self.std
+        item[IMAGE2] = (item[IMAGE2] - self.mean) / self.std
+        return item
 
 
 class Rescale(object):
@@ -90,24 +98,24 @@ class Rescale(object):
             self.output_size = output_size
 
     def __call__(self, item):
-        im1, im2, homo = (
-            item["im1"],
-            item["im2"],
-            item["homo"]
+        image1, image2, homo = (
+            item[IMAGE1],
+            item[IMAGE2],
+            item[HOMO]
         )
 
-        im1, r1 = resize_image(im1, self.output_size)
-        im2, r2 = resize_image(im2, self.output_size)
+        image1, ratio1 = resize_image(image1, self.output_size)
+        image2, ratio2 = resize_image(image2, self.output_size)
 
-        homo = resize_homography(homo, r1, r2)
+        homo = resize_homography(homo, ratio1, ratio2)
 
-        item["im1"] = im1
-        item["im2"] = im2
-        item["homo"] = homo
+        item[IMAGE1] = image1
+        item[IMAGE2] = image2
+        item[HOMO] = homo
 
-        if "orig1" in item:
-            item["orig1"], _ = resize_image(item["orig1"], self.output_size)
-            item["orig2"], _ = resize_image(item["orig2"], self.output_size)
+        if S_IMAGE1 in item:
+            item[S_IMAGE1], _ = resize_image(item[S_IMAGE1], self.output_size)
+            item[S_IMAGE2], _ = resize_image(item[S_IMAGE2], self.output_size)
 
         return item
 
@@ -123,20 +131,20 @@ class RandomCrop:
             self.output_size = output_size
 
     def __call__(self, item):
-        im1, im2, homo = (
-            item["im1"],
-            item["im2"],
-            item["homo"]
+        image1, image2, homo = (
+            item[IMAGE1],
+            item[IMAGE2],
+            item[HOMO]
         )
 
         new_h, new_w = self.output_size
 
-        h1, w1 = im1.shape[:2]
-        h2, w2 = im2.shape[:2]
+        h1, w1 = image1.shape[:2]
+        h2, w2 = image2.shape[:2]
 
         if h1 <= new_h or w1 <= new_w:
-            im1, r1 = resize_image(im1, self.output_size)
-            homo = resize_homography(homo, r1=r1)
+            image1, ratio1 = resize_image(image1, self.output_size)
+            homo = resize_homography(homo, ratio1=ratio1)
         else:
             top1 = np.random.randint(0, h1 - new_h)
             left1 = np.random.randint(0, w1 - new_w)
@@ -145,12 +153,12 @@ class RandomCrop:
 
             rect1 = (top1, bottom1, left1, right1)
 
-            im1 = crop_image(im1, rect1)
+            image1 = crop_image(image1, rect1)
             homo = crop_homography(homo, rect1=rect1)
 
         if h2 <= new_h or w2 <= new_w:
-            im2, r2 = resize_image(im2, self.output_size)
-            homo = resize_homography(homo, r2=r2)
+            image2, ratio2 = resize_image(image2, self.output_size)
+            homo = resize_homography(homo, ratio2=ratio2)
         else:
             top2 = np.random.randint(0, h2 - new_h)
             left2 = np.random.randint(0, w1 - new_w)
@@ -159,12 +167,12 @@ class RandomCrop:
 
             rect2 = (top2, bottom2, left2, right2)
 
-            im2 = crop_image(im2, rect2)
+            image2 = crop_image(image2, rect2)
             homo = crop_homography(homo, rect2=rect2)
 
-        item["im1"] = im1
-        item["im2"] = im2
-        item["homo"] = homo
+        item[IMAGE1] = image1
+        item[IMAGE2] = image2
+        item[HOMO] = homo
 
         return item
 
@@ -172,27 +180,27 @@ class RandomCrop:
 class ToTensor:
 
     def __call__(self, item):
-        im1, im2, homo = (
-            item["im1"],
-            item["im2"],
-            item["homo"]
+        image1, image2, homo = (
+            item[IMAGE1],
+            item[IMAGE2],
+            item[HOMO]
         )
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C X H X W
-        im1 = im1.transpose((2, 0, 1))
-        im2 = im2.transpose((2, 0, 1))
+        image1 = image1.transpose((2, 0, 1))
+        image2 = image2.transpose((2, 0, 1))
 
-        item["im1"] = torch.from_numpy(im1).float()
-        item["im2"] = torch.from_numpy(im2).float()
-        item["homo"] = torch.from_numpy(np.asarray(homo)).float()
+        item[IMAGE1] = torch.from_numpy(image1).float()
+        item[IMAGE2] = torch.from_numpy(image2).float()
+        item[HOMO] = torch.from_numpy(np.asarray(homo)).float()
 
-        if "orig1" in item:
-            orig1 = item["orig1"].transpose((2, 0, 1))
-            orig2 = item["orig2"].transpose((2, 0, 1))
+        if S_IMAGE1 in item:
+            s_image1 = item[S_IMAGE1].transpose((2, 0, 1))
+            s_image2 = item[S_IMAGE2].transpose((2, 0, 1))
 
-            item["orig1"] = torch.from_numpy(orig1)
-            item["orig2"] = torch.from_numpy(orig2)
+            item[S_IMAGE1] = torch.from_numpy(s_image1)
+            item[S_IMAGE2] = torch.from_numpy(s_image2)
 
         return item

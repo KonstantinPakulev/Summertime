@@ -5,6 +5,11 @@ import torch
 import torch.nn.functional as F
 
 
+"""
+Image manipulations
+"""
+
+
 def resize_image(image, output_size):
     """
     :param image: H x W x C
@@ -29,31 +34,6 @@ def resize_image(image, output_size):
     return image, (new_w / w, new_h / h)
 
 
-def resize_homography(homography, r1=None, r2=None):
-    """
-    :param homography: 3 x 3
-    :param r1: (new_w / w, new_h / h) of the first image
-    :param r2: (new_w / w, new_h / h) of the second image
-    """
-    if r1 is not None:
-        wr1, hr1 = r1
-        t = np.mat([[1 / wr1, 0, 0],
-                    [0, 1 / hr1, 0],
-                    [0, 0, 1]], dtype=homography.dtype)
-
-        homography = homography * t
-
-    if r2 is not None:
-        wr2, hr2 = r2
-        t = np.mat([[wr2, 0, 0],
-                    [0, hr2, 0],
-                    [0, 0, 1]], dtype=homography.dtype)
-
-        homography = t * homography
-
-    return homography
-
-
 def crop_image(image, rect):
     """
     :param image: H x W
@@ -62,6 +42,36 @@ def crop_image(image, rect):
     top, bottom, left, right = rect
 
     return image[top: bottom, left: right]
+
+
+"""
+Homography functions
+"""
+
+
+def resize_homography(homography, ratio1=None, ratio2=None):
+    """
+    :param homography: 3 x 3
+    :param ratio1: (new_w / w, new_h / h) of the first image
+    :param ratio2: (new_w / w, new_h / h) of the second image
+    """
+    if ratio1 is not None:
+        wr1, hr1 = ratio1
+        t = np.mat([[1 / wr1, 0, 0],
+                    [0, 1 / hr1, 0],
+                    [0, 0, 1]], dtype=homography.dtype)
+
+        homography = homography * t
+
+    if ratio2 is not None:
+        wr2, hr2 = ratio2
+        t = np.mat([[wr2, 0, 0],
+                    [0, hr2, 0],
+                    [0, 0, 1]], dtype=homography.dtype)
+
+        homography = t * homography
+
+    return homography
 
 
 def crop_homography(homography, rect1=None, rect2=None):
@@ -156,6 +166,11 @@ def warp_image(image, homography):
     return w_image
 
 
+"""
+Kernel functions
+"""
+
+
 def apply_kernel(mask, kernel):
     """
     :param mask: N x 1 x H x W
@@ -221,21 +236,26 @@ def gaussian_filter(mask, ks, sigma: float):
     return gauss_mask
 
 
-def nms(det, thresh: float, k_size):
+"""
+Score processing functions
+"""
+
+
+def nms(score, thresh: float, k_size):
     """
-    :param det: B x 1 x H x W
+    :param score: B x 1 x H x W
     :param thresh: float
     :param k_size: int
     """
-    _, _, h, w = det.size()
+    _, _, h, w = score.size()
 
-    det = torch.where(det < thresh, torch.zeros_like(det), det)
+    score = torch.where(score < thresh, torch.zeros_like(score), score)
 
     pad_size = k_size // 2
     ps2 = pad_size * 2
     pad = [ps2, ps2, ps2, ps2, 0, 0]
 
-    pad_det = F.pad(det, pad)
+    pad_det = F.pad(score, pad)
 
     slice_map = torch.tensor([], dtype=pad_det.dtype, device=pad_det.device)
     for i in range(k_size):
@@ -247,25 +267,39 @@ def nms(det, thresh: float, k_size):
     center_map = slice_map[:, slice_map.size(1) // 2, :, :].unsqueeze(1)
 
     nms_mask = torch.ge(center_map, max_slice)
-    nms_mask = nms_mask[:, :, pad_size: h + pad_size, pad_size: w + pad_size].type_as(det)
+    nms_mask = nms_mask[:, :, pad_size: h + pad_size, pad_size: w + pad_size].type_as(score)
 
-    det = det * nms_mask
+    score = score * nms_mask
 
-    return det
+    return score
 
 
-def space_to_depth(image, grid_size):
+def select_keypoints(score, thresh, k_size, top_k):
     """
-    :param image: N x C x H x W
-    :param grid_size: int
+    :param score: N x 1 x H x W
+    :param thresh: float
+    :param k_size: int
+    :param top_k: int
     """
-    n, c, h, w = image.size()
+    n, c, h, w = score.size()
+    flat = h * w
 
-    hr = h // grid_size
-    wr = w // grid_size
+    # Apply nms
+    score = nms(score, thresh, k_size)
 
-    x = image.view(n, c, hr, grid_size, wr, grid_size)
-    x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # N x grid_size x grid_size x C x Hr x Wr
-    x = x.view(n, c * (grid_size ** 2), hr, wr)  # N x C * grid_size^2 x Hr x Wr
+    # Extract maximum activation indices
+    score = score.view(n, c, flat)
+    _, top_k_indices = torch.topk(score, top_k)
 
-    return x
+    # Select maximum activations
+    top_score = torch.zeros_like(score).to(score.device)
+    top_score[:, :, top_k_indices] = score[:, :, top_k_indices]
+
+    top_score = top_score.view(n, c, h, w)
+    keypoints = top_score.nonzero()
+
+    return top_score, keypoints
+
+
+
+
