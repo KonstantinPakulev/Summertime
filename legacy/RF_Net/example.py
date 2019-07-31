@@ -9,7 +9,7 @@ import random
 import argparse
 import numpy as np
 
-module_path = os.path.abspath(os.path.join('..'))
+module_path = os.path.abspath(os.path.join('../..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         os.mkdir(matches_path)
 
     for i, p in enumerate(image_paths):
-        kp, des, img = model.detectAndCompute(p, device, (450, 600))
+        kp, des, img = model.detectAndCompute(p, device, (240, 320))
         detections.append((kp, des, img))
 
         keypoints = list(map(to_cv2_kp, kp))

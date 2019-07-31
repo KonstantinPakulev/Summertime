@@ -146,7 +146,7 @@ Image data options
 # View train sequence Mean and Std
 __C.view = edict()
 __C.view.csv = "hpatch_view.csv"
-__C.view.root = "./data/hpatch_v_sequence"
+__C.view.root = "../../data/hpatch_v_sequence"
 __C.view.MEAN = 0.4230204841414801
 __C.view.STD = 0.25000138349993173
 __C.view.NUM = 295
@@ -154,7 +154,7 @@ __C.view.NUM = 295
 # illumination sequence Mean and Std
 __C.illu = edict()
 __C.illu.csv = "hpatch_illum.csv"
-__C.illu.root = "./data/hpatch_i_sequence"
+__C.illu.root = "../../data/hpatch_i_sequence"
 __C.illu.MEAN = 0.4337542740124942
 __C.illu.STD = 0.2642307153894012
 __C.illu.NUM = 285
@@ -162,7 +162,7 @@ __C.illu.NUM = 285
 # illumination sequence Mean and Std
 __C.ef = edict()
 __C.ef.csv = "EFDataset.csv"
-__C.ef.root = "./data/EFDataset"
+__C.ef.root = "../../data/EFDataset"
 __C.ef.MEAN = 0.4630827743610772
 __C.ef.STD = 0.24659232013004403
 __C.ef.NUM = 293

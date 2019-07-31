@@ -7,7 +7,7 @@ Model settings
 """
 cfg.MODEL = EasyDict()
 cfg.MODEL.GRID_SIZE = 8
-cfg.MODEL.DESCRIPTOR_SIZE = 16
+cfg.MODEL.DESCRIPTOR_SIZE = 32
 
 """
 Loss settings

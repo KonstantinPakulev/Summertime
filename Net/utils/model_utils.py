@@ -1,50 +1,39 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 """
-VGG based backbone, detector and descriptor
+Building blocks for models
 """
 
-vgg_structure = [64, 64, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128]
+
+def make_rf_block(in_channels, out_channels):
+    conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
+    conv += [nn.InstanceNorm2d(out_channels, affine=True)]
+    conv += [nn.LeakyReLU()]
+
+    score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
+    score += [nn.InstanceNorm2d(1, affine=True)]
+
+    return nn.Sequential(*conv), nn.Sequential(*score)
 
 
-def make_vgg_block(in_channels, out_channels, kernel_size, padding, activation):
-    block = [nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)]
-    block += [nn.BatchNorm2d(out_channels)]
+def make_vgg_block(in_channels, out_channels):
+    conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
+    conv += [nn.BatchNorm2d(out_channels)]
+    conv += [nn.ReLU()]
 
-    if activation is not None:
-        block += [activation]
+    score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
+    score += [nn.BatchNorm2d(1)]
 
-    return block
-
-
-def make_vgg_backbone():
-    layers = []
-    in_channels = 1
-    for v in vgg_structure:
-        if v == 'M':
-            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-        else:
-            layers += make_vgg_block(in_channels, v, 3, 1, nn.ReLU(inplace=True))
-            in_channels = v
-
-    return nn.Sequential(*layers)
+    return nn.Sequential(*conv), nn.Sequential(*score)
 
 
-def make_vgg_detector_head(grid_size):
-    layers = []
-    layers += make_vgg_block(vgg_structure[-1], 256, 3, 1, nn.ReLU(inplace=True))
-    layers += make_vgg_block(256, 1 + pow(grid_size, 2), 1, 0, None)
+def make_sdc_block(in_channels, out_channels, dilation):
+    conv = [nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2 + 2 * (dilation - 1), dilation=dilation)]
+    conv += [nn.ELU()]
 
-    return nn.Sequential(*layers)
-
-
-def make_vgg_descriptor_head(descriptor_size):
-    layers = []
-    layers += make_vgg_block(vgg_structure[-1], 256, 3, 1, nn.ReLU(inplace=True))
-    layers += make_vgg_block(256, descriptor_size, 1, 0, None)
-
-    return nn.Sequential(*layers)
+    return nn.Sequential(*conv)
 
 
 """
@@ -69,6 +58,33 @@ def space_to_depth(tensor, grid_size):
     return x
 
 
+def multi_scale_nms(multi_scale_scores, k_size, strength=3.0):
+    padding = k_size // 2
+
+    nms_scale_scores = F.max_pool2d(multi_scale_scores, kernel_size=k_size, padding=padding, stride=1)
+    max_scale_scores, _ = nms_scale_scores.max(dim=1)
+
+    _, c, _, _ = multi_scale_scores.size()
+
+    exp = torch.exp(strength * (multi_scale_scores - max_scale_scores))
+    weight = torch.ones((1, c, k_size, k_size)).to(multi_scale_scores.device)
+    sum_exp = F.conv2d(exp, weight=weight, padding=padding) + 1e-8
+
+    return exp / sum_exp
+
+
+def multi_scale_softmax(multi_scale_scores, strength=100.0):
+    max_scores, _ = multi_scale_scores.max(dim=1, keepdim=True)
+
+    exp = torch.exp(strength * (multi_scale_scores - max_scores))
+    sum_exp = exp.sum(dim=1, keepdim=True) + 1e-8
+    softmax = exp / sum_exp
+
+    score = torch.sum(multi_scale_scores * softmax, dim=1, keepdim=True)
+
+    return score
+
+
 def sample_descriptors(desc, kp, grid_size):
     """
     :param desc: N x C x H x W
@@ -78,4 +94,4 @@ def sample_descriptors(desc, kp, grid_size):
     desc = F.interpolate(desc, scale_factor=grid_size, mode='bilinear', align_corners=True)
     desc = F.normalize(desc)
 
-    return  desc[kp[:, 0], :, kp[:, 2], kp[:, 3]]
+    return desc[kp[:, 0], :, kp[:, 2], kp[:, 3]]

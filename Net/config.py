@@ -16,7 +16,7 @@ cfg.LOSS = EasyDict()
 
 cfg.LOSS.DES_LAMBDA = 0.0001
 
-cfg.LOSS.POS_LAMBDA = 4
+cfg.LOSS.POS_LAMBDA = 1
 cfg.LOSS.POS_MARGIN = 1
 cfg.LOSS.NEG_MARGIN = 0.2
 
@@ -32,14 +32,15 @@ cfg.LOSS.GAUSS_SIGMA = 0.5
 Metric settings
 """
 cfg.METRIC = EasyDict()
-cfg.METRIC.THRESH = 1.0
-cfg.METRIC.RATIO = 0.7
+cfg.METRIC.DET_THRESH = 5.0
+cfg.METRIC.DES_THRESH = 1.0
+cfg.METRIC.DES_RATIO = 0.7
 
 """
 Train settings
 """
 cfg.TRAIN = EasyDict()
-cfg.TRAIN.BATCH_SIZE = 4
+cfg.TRAIN.BATCH_SIZE = 1
 cfg.TRAIN.NUM_EPOCHS = 3000
 cfg.TRAIN.LOG_INTERVAL = 2
 cfg.TRAIN.LR = 0.001
@@ -49,7 +50,7 @@ cfg.TRAIN.WEIGHT_DECAY = 1e-5
 Val settings
 """
 cfg.VAL = EasyDict()
-cfg.VAL.BATCH_SIZE = 4
+cfg.VAL.BATCH_SIZE = 1
 cfg.VAL.LOG_INTERVAL = 8
 
 """
@@ -57,7 +58,7 @@ Val show settings
 """
 cfg.VAL_SHOW = EasyDict()
 cfg.VAL_SHOW.BATCH_SIZE = 1
-cfg.VAL_SHOW.LOG_INTERVAL = 30
+cfg.VAL_SHOW.LOG_INTERVAL = 1
 
 """
 Dataset settings

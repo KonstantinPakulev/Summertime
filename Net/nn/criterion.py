@@ -26,7 +26,6 @@ class HomoMSELoss(nn.Module):
         self.gauss_sigma = gauss_sigma
 
     def forward(self, score1, score2, homo):
-
         # Warp score2 to score1 space
         w_score2 = warp_image(score2, homo)
 
@@ -39,7 +38,9 @@ class HomoMSELoss(nn.Module):
         w_score2 = w_score2 * vis_mask1
 
         # Extract keypoints and prepare ground truth
-        _, kp1 = select_keypoints(score1, self.nms_thresh, self.nms_k_size, self.top_k)
+        score1, kp1 = select_keypoints(score1, self.nms_thresh, self.nms_k_size, self.top_k)
+        score1 = gaussian_filter(score1, self.gauss_k_size, self.gauss_sigma)
+
         gt_score1, _ = select_keypoints(w_score2, self.nms_thresh, self.nms_k_size, self.top_k)
         gt_score1 = gaussian_filter(gt_score1, self.gauss_k_size, self.gauss_sigma)
 

@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 
 import sys
 
-module_path = os.path.abspath(os.path.join('..'))
+module_path = os.path.abspath(os.path.join('../..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
@@ -323,17 +323,17 @@ if __name__ == "__main__":
             model.train()
             batch = parse_batch(sample_batched, device)
             with autograd.detect_anomaly():
-                for des_train in range(0, cfg.TRAIN.DES):
-                    model.zero_grad()
-                    des_optim.zero_grad()
-                    endpoint = model(batch)
-                    _, _, desloss = (
-                        model.module.criterion(endpoint)
-                        if mgpu
-                        else model.criterion(endpoint)
-                    )
-                    desloss.backward()
-                    des_optim.step()
+                # for des_train in range(0, cfg.TRAIN.DES):
+                #     model.zero_grad()
+                #     des_optim.zero_grad()
+                #     endpoint = model(batch)
+                #     _, _, desloss = (
+                #         model.module.criterion(endpoint)
+                #         if mgpu
+                #         else model.criterion(endpoint)
+                #     )
+                #     desloss.backward()
+                #     des_optim.step()
                 for det_train in range(0, cfg.TRAIN.DET):
                     model.zero_grad()
                     det_optim.zero_grad()
@@ -440,7 +440,7 @@ if __name__ == "__main__":
         checkpoint, val_ms = evaluate(val_data)
 
         # Save the model if the match score is the best we've seen so far.
-        if not best_ms or val_ms >= best_ms:
+        if not best_ms or val_ms >= best_ms or epoch % 5:
             state = {
                 "epoch": epoch,
                 "state_dict": model.state_dict(),

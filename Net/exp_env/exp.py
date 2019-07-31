@@ -1,4 +1,5 @@
 import os
+import cv2
 import sys
 from skimage import io, color
 import numpy as np
@@ -18,15 +19,19 @@ from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 
 from Net.exp_env.exp_config import cfg
-from Net.nn.model import Net
-from legacy.ST_Net.model.st_det_vgg import STDetVGGModule
-from legacy.ST_Net.model.st_net_vgg import STNetVGGModule
-from Net.nn.criterion import HomoMSELoss, HomoHingeLoss
+from Net.nn.model import NetRF, NetVGG
 from Net.hpatches_dataset import (
     HPatchesDataset,
     TRAIN,
     VALIDATE,
     VALIDATE_SHOW,
+
+    IMAGE1,
+    IMAGE2,
+    HOMO,
+    S_IMAGE1,
+    S_IMAGE2,
+
     Grayscale,
     Normalize,
     RandomCrop,
@@ -34,130 +39,109 @@ from Net.hpatches_dataset import (
     ToTensor
 )
 from Net.utils.eval_utils import (l_collect_show,
-                                  nearest_neighbor_match_score,
-                                  nearest_neighbor_thresh_match_score,
-                                  nearest_neighbor_ratio_match_score,
                                   plot_keypoints)
-from Net.utils.ignite_utils import AverageMetric, CollectMetric
-from Net.utils.image_utils import warp_image, erode_filter, dilate_filter, nms
+from Net.utils.ignite_utils import CollectMetric
+from Net.utils.image_utils import warp_image, select_keypoints
 
 
-def h_patches_dataset(mode):
-    transform = [Grayscale(),
-                 Normalize(mean=cfg.DATASET.view.MEAN, std=cfg.DATASET.view.STD),
-                 Rescale((960, 1280))]
-
-    if mode == TRAIN:
-        csv_file = cfg.DATASET.view.train_csv
-        transform += [RandomCrop((720, 960)),
-                      Rescale((240, 320))]
-        include_originals = False
-
-    elif mode == VALIDATE:
-        csv_file = cfg.DATASET.view.val_csv
-        transform += [Rescale((240, 320))]
-        include_originals = False
-    else:
-        csv_file = cfg.DATASET.view.val_show_csv
-        transform += [Rescale((480, 640))]
-        include_originals = True
-
-    transform += [ToTensor()]
-
-    return HPatchesDataset(root_path=cfg.DATASET.view.root,
-                           csv_file=csv_file,
-                           transform=transforms.Compose(transform),
-                           include_originals=include_originals)
+def torch2cv(img):
+    """
+    :type img: 1 x C x H x W
+    """
+    img = img.permute(0, 2, 3, 1)[0].cpu().detach().numpy()
+    img = (img * 255).astype(np.uint8)
+    return img
 
 
-def test(device, log_dir):
+def kp2cv(kp):
+    """
+    :type kp: K x 4
+    """
+    return cv2.KeyPoint(kp[3], kp[2], 0)
+
+
+def test(device, log_dir, checkpoint_path):
     dataset = HPatchesDataset(root_path=cfg.DATASET.view.root,
-                              csv_file='val.csv',
+                              csv_file="exp.csv",
                               transform=transforms.Compose([
                                   Grayscale(),
                                   Normalize(mean=cfg.DATASET.view.MEAN, std=cfg.DATASET.view.STD),
-                                  Rescale((240, 320)),
+                                  Rescale((960, 1280)),
+                                  Rescale((480, 640)),
                                   ToTensor(),
-                              ]))
+                              ]), include_originals=True)
 
-    val_show_loader = DataLoader(h_patches_dataset(VALIDATE_SHOW),
-                                 batch_size=cfg.VAL_SHOW.BATCH_SIZE)
-
-    loader = DataLoader(dataset,
-                        batch_size=cfg.TRAIN.BATCH_SIZE,
-                        shuffle=False)
+    loader = DataLoader(dataset, 1, False)
 
     writer = SummaryWriter(logdir=log_dir)
 
-    model = Net(cfg.MODEL.GRID_SIZE, cfg.MODEL.DESCRIPTOR_SIZE).to(device)
-    model_lf = STDetVGGModule(cfg.MODEL.GRID_SIZE,
-                              cfg.LOSS.NMS_THRESH, cfg.LOSS.NMS_K_SIZE,
-                              cfg.LOSS.TOP_K,
-                              cfg.LOSS.GAUSS_K_SIZE, cfg.LOSS.GAUSS_SIGMA)
-    lf = STNetVGGModule(model_lf, None)
-
-    criterion = HomoMSELoss(cfg.LOSS.NMS_THRESH, cfg.LOSS.NMS_K_SIZE,
-                            cfg.LOSS.TOP_K,
-                            cfg.LOSS.GAUSS_K_SIZE, cfg.LOSS.GAUSS_SIGMA)
-    optimizer = Adam(model.parameters(), lr=cfg.TRAIN.LR, weight_decay=cfg.TRAIN.WEIGHT_DECAY)
+    model = NetVGG().to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
 
     def iteration(engine, batch):
-        im1, im2, homo = (
-            batch['im1'].to(device),
-            batch['im2'].to(device),
-            batch['homo'].to(device)
+        image1, image2, homo, s_image1, s_image2 = (
+            batch[IMAGE1].to(device),
+            batch[IMAGE2].to(device),
+            batch[HOMO].to(device),
+            batch[S_IMAGE1].to(device),
+            batch[S_IMAGE2].to(device)
         )
         homo_inv = homo.inverse()
 
-        det1, _ = model(im1)
-        det2, _ = model(im2)
+        score1 = model(image1)
+        score2 = model(image2)
 
-        det_loss1, top_k_mask1, vis_mask1 = criterion(det1, det2, homo)
-        det_loss2, top_k_mask2, vis_mask2 = criterion(det2, det1, homo_inv)
+        """
+        Select keypoints and plot them on images
+        """
 
-        det_loss = (det_loss1 + det_loss2) / 2
+        top_score1, kp1 = select_keypoints(score1, cfg.LOSS.NMS_THRESH, cfg.LOSS.NMS_K_SIZE, cfg.LOSS.TOP_K)
+        top_score2, kp2 = select_keypoints(score2, cfg.LOSS.NMS_THRESH, cfg.LOSS.NMS_K_SIZE, cfg.LOSS.TOP_K)
 
-        # loss, _, _ = criterion(det1, det2, homo)
-        # print(loss)
-        #
-        # im1_score, _, _ = model_lf.process(det1)
-        # im1_gtsc, _, _, im1_visible = lf.get_gt_score(det2, homo)
-        # loss2 = model_lf.loss(im1_score, im1_gtsc, im1_visible)
-        # print(loss2)
-        # _, _, gt_2, vm2 = criterion(det2, det1, homo_inv)
+        s_image1 = torch2cv(s_image1)
+        s_image2 = torch2cv(s_image2)
 
-        # gt_lf_1, _, _, vm_lf_1 = lf.get_gt_score(det2, homo)
-        # gt_lf_2, _, _, vm_lf_2 = lf.get_gt_score(det1, homo_inv)
-        #
-        # my_images = torch.cat((gt_1, gt_2), dim=0)
-        # lf_images = torch.cat((gt_lf_1, gt_lf_2), dim=0)
-        #
-        # writer.add_image("my", make_grid(my_images))
-        # writer.add_image("lf", make_grid(lf_images))
+        kp1 = kp1.cpu().detach().numpy()
+        kp2 = kp2.cpu().detach().numpy()
 
-        return det_loss, top_k_mask1, top_k_mask2, vis_mask1, vis_mask2
+        kp1 = list(map(kp2cv, kp1))
+        kp2 = list(map(kp2cv, kp2))
 
-    def validation_show_iteration(engine, batch):
-        _, top_k_mask1, top_k_mask2, vis_mask1, vis_mask2 = iteration(engine, batch)
+        s_image1_kp = cv2.drawKeypoints(s_image1, kp1, None, color=(0, 255, 0))
+        s_image2_kp = cv2.drawKeypoints(s_image2, kp2, None, color=(0, 255, 0))
 
-        return {
-            'im1': batch['orig1'],
-            'im2': batch['orig2'],
-            'top_k_mask1': top_k_mask1,
-            'top_k_mask2': top_k_mask2
-        }
+        s_image1_kp = s_image1_kp.transpose((2, 0, 1))
+        s_image1_kp = torch.from_numpy(s_image1_kp).unsqueeze(0)
 
-    trainer = Engine(iteration)
-    validator_show = Engine(validation_show_iteration)
+        s_image2_kp = s_image2_kp.transpose((2, 0, 1))
+        s_image2_kp = torch.from_numpy(s_image2_kp).unsqueeze(0)
 
-    CollectMetric(l_collect_show).attach(validator_show, 'show')
+        writer.add_image("images", make_grid(torch.cat((s_image1_kp, s_image2_kp), dim=0)), engine.state.iteration)
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def on_epoch_completed(engine):
-        validator_show.run(val_show_loader)
-        plot_keypoints(writer, engine.state.epoch, validator_show.state.metrics['show'])
+        """
+        Plot score distributions
+        """
 
-    trainer.run(loader, max_epochs=cfg.TRAIN.NUM_EPOCHS)
+        score1 -= score1.min()
+        score2 -= score2.min()
+
+        score1 *= 190
+        score2 *= 190
+
+        w_score1 = warp_image(score1, homo)
+        w_score2 = warp_image(score2, homo_inv)
+
+        print(score1.unique(), score2.unique(), score1.unique().shape, score2.unique().shape)
+        print(w_score1.unique(), w_score2.unique(), w_score1.unique().shape, w_score2.unique().shape)
+
+        writer.add_image("scores", make_grid(torch.cat((score1, score2), dim=0)), engine.state.iteration)
+        writer.add_image("warped_scores", make_grid(torch.cat((w_score1, w_score2), dim=0)), engine.state.iteration)
+
+        return 0
+
+    validator_show = Engine(iteration)
+
+    validator_show.run(loader)
 
     writer.close()
 
@@ -165,10 +149,14 @@ def test(device, log_dir):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--log_dir", type=str)
+    parser.add_argument("--checkpoint_path", type=str)
 
     args = parser.parse_args()
 
     _device = torch.device('cpu')
     _log_dir = args.log_dir
+    _checkpoint_path = args.checkpoint_path
 
-    test(_device, _log_dir)
+    torch.manual_seed(9)
+
+    test(_device, _log_dir, _checkpoint_path)

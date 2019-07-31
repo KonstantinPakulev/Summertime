@@ -201,11 +201,12 @@ def erode_filter(mask):
     return morphed_mask
 
 
-def dilate_filter(mask):
+def dilate_filter(mask, ks=3):
     """
     :param mask: N x 1 x H x W
+    :param ks: dilate kernel size
     """
-    dilate_kernel = torch.ones((1, 1, 3, 3)).type_as(mask).to(mask.device)
+    dilate_kernel = torch.ones((1, 1, ks, ks)).type_as(mask).to(mask.device)
 
     dilated_mask = apply_kernel(mask, dilate_kernel).gt(0).float()
 

@@ -1,32 +1,151 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from Net.utils.model_utils import make_vgg_backbone, make_vgg_detector_head, make_vgg_descriptor_head
+from Net.utils.model_utils import (make_vgg_block,
+                                   make_sdc_block,
+                                   make_rf_block,
+
+                                   multi_scale_nms,
+                                   multi_scale_softmax)
 
 
 class Net(nn.Module):
 
-    def __init__(self, grid_size, descriptor_size):
+    def __init__(self):
         super().__init__()
-        self.grid_size = grid_size
 
-        self.backbone = make_vgg_backbone()
-        self.detector = make_vgg_detector_head(grid_size)
-        self.descriptor = make_vgg_descriptor_head(descriptor_size)
+        self.conv1 = make_sdc_block(1, 16, 1)
+        self.conv2 = make_sdc_block(1, 16, 2)
+        self.conv3 = make_sdc_block(1, 16, 3)
+        self.conv4 = make_sdc_block(1, 16, 4)
 
     def forward(self, x):
         """
         :param x: B x C x H x W
         """
-        x = self.backbone(x)
-        raw_score = self.detector(x)
-        raw_desc = self.descriptor(x)
 
-        raw_score = raw_score.softmax(dim=1)
-        # Remove 'no interest point' channel
-        raw_score = raw_score[:, :-1, :, :]
-        score = F.pixel_shuffle(raw_score, self.grid_size)
+        s1 = self.conv1(x)
+        s2 = self.conv2(x)
+        s3 = self.conv3(x)
+        s4 = self.conv4(x)
 
-        desc = F.normalize(raw_desc)
+        multi_scale_scores = torch.cat((s1, s2, s3, s4), dim=1)
 
-        return score, desc
+        multi_scale_scores = multi_scale_nms(multi_scale_scores, 15)
+        score = multi_scale_softmax(multi_scale_scores)
+
+        return score
+
+
+class NetVGG(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.conv1, self.score1 = make_vgg_block(1, 16)
+        self.conv2, self.score2 = make_vgg_block(16, 16)
+
+        self.conv3, self.score3 = make_vgg_block(16, 16)
+        self.conv4, self.score4 = make_vgg_block(16, 16)
+
+        self.conv5, self.score5 = make_vgg_block(16, 16)
+        self.conv6, self.score6 = make_vgg_block(16, 16)
+
+        self.conv7, self.score7 = make_vgg_block(16, 16)
+        self.conv8, self.score8 = make_vgg_block(16, 16)
+
+    def forward(self, x):
+        """
+        :param x: B x C x H x W
+        """
+
+        x = self.conv1(x)
+        s1 = self.score1(x)
+
+        x = self.conv2(x)
+        s2 = self.score2(x)
+
+        x = self.conv3(x)
+        s3 = self.score3(x)
+
+        x = self.conv4(x)
+        s4 = self.score4(x)
+
+        x = self.conv5(x)
+        s5 = self.score5(x)
+
+        x = self.conv6(x)
+        s6 = self.score6(x)
+
+        x = self.conv7(x)
+        s7 = self.score7(x)
+
+        x = self.conv8(x)
+        s8 = self.score8(x)
+
+        multi_scale_scores = torch.cat((s1, s2, s3, s4, s5, s6, s7, s8), dim=1)
+
+        multi_scale_scores = multi_scale_nms(multi_scale_scores, 15)
+        score = multi_scale_softmax(multi_scale_scores)
+
+        return score
+
+
+class NetRF(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.conv1, self.score1 = make_rf_block(1, 16)
+        self.conv2, self.score2 = make_rf_block(16, 16)
+        self.conv3, self.score3 = make_rf_block(16, 16)
+        self.conv4, self.score4 = make_rf_block(16, 16)
+        self.conv5, self.score5 = make_rf_block(16, 16)
+        self.conv6, self.score6 = make_rf_block(16, 16)
+        self.conv7, self.score7 = make_rf_block(16, 16)
+        self.conv8, self.score8 = make_rf_block(16, 16)
+        self.conv9, self.score9 = make_rf_block(16, 16)
+        self.conv10, self.score10 = make_rf_block(16, 16)
+
+    def forward(self, x):
+        """
+        :param x: B x C x H x W
+        """
+
+        x = self.conv1(x)
+        s1 = self.score1(x)
+
+        x = self.conv2(x)
+        s2 = self.score2(x)
+
+        x = self.conv3(x)
+        s3 = self.score3(x)
+
+        x = self.conv4(x)
+        s4 = self.score4(x)
+
+        x = self.conv5(x)
+        s5 = self.score5(x)
+
+        x = self.conv6(x)
+        s6 = self.score6(x)
+
+        x = self.conv7(x)
+        s7 = self.score7(x)
+
+        x = self.conv8(x)
+        s8 = self.score8(x)
+
+        x = self.conv9(x)
+        s9 = self.score9(x)
+
+        x = self.conv10(x)
+        s10 = self.score10(x)
+
+        multi_scale_scores = torch.cat((s1, s2, s3, s4, s5, s6, s7, s8, s9, s10), dim=1)
+
+        multi_scale_scores = multi_scale_nms(multi_scale_scores, 15)
+        score = multi_scale_softmax(multi_scale_scores)
+
+        return score
