@@ -7,7 +7,7 @@ Building blocks for models
 """
 
 
-def make_rf_block(in_channels, out_channels):
+def make_rf_ms_block(in_channels, out_channels):
     conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
     conv += [nn.InstanceNorm2d(out_channels, affine=True)]
     conv += [nn.LeakyReLU()]
@@ -23,17 +23,32 @@ def make_vgg_block(in_channels, out_channels):
     conv += [nn.BatchNorm2d(out_channels)]
     conv += [nn.ReLU()]
 
+    return nn.Sequential(*conv)
+
+
+def make_vgg_ms_block(in_channels, out_channels):
     score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
     score += [nn.BatchNorm2d(1)]
 
-    return nn.Sequential(*conv), nn.Sequential(*score)
+    return make_vgg_block(in_channels, out_channels), nn.Sequential(*score)
 
 
-def make_sdc_block(in_channels, out_channels, dilation):
+def make_sdc_ms_block(in_channels, out_channels, dilation):
     conv = [nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2 + 2 * (dilation - 1), dilation=dilation)]
     conv += [nn.ELU()]
 
     return nn.Sequential(*conv)
+
+
+def make_vgg_descriptor(descriptor_size):
+    layers = [nn.MaxPool2d(kernel_size=2, stride=2)]
+
+    layers += make_vgg_block(64, 64)
+    layers += make_vgg_block(64, 64)
+
+    
+
+
 
 
 """
