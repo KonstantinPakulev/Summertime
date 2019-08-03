@@ -81,9 +81,9 @@ class AverageListMetric(Metric):
 
     def update(self, output):
         if self.value is None:
-            self.value = [output]
+            self.value = output
         else:
-            for i, v in enumerate(self.value):
+            for i, v in enumerate(output):
                 self.value[i] += v
 
         self.iter_counter += 1
@@ -91,6 +91,7 @@ class AverageListMetric(Metric):
     def compute(self):
         for i in range(len(self.value)):
             self.value[i] /= self.iter_counter
+
         return self.value
 
     def attach(self, engine, name):

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from Net.utils.model_utils import (make_vgg_ms_block,
                                    make_sdc_ms_block,
                                    make_rf_ms_block,
+                                   make_vgg_descriptor,
 
                                    multi_scale_nms,
                                    multi_scale_softmax)
@@ -12,7 +13,7 @@ from Net.utils.model_utils import (make_vgg_ms_block,
 
 class Net(nn.Module):
 
-    def __init__(self):
+    def __init__(self, descriptor_size):
         super().__init__()
 
         self.conv1 = make_sdc_ms_block(1, 16, 1)
@@ -20,10 +21,12 @@ class Net(nn.Module):
         self.conv3 = make_sdc_ms_block(1, 16, 3)
         self.conv4 = make_sdc_ms_block(1, 16, 4)
 
-        self.conv5 = make_sdc_ms_block(16, 16, 1)
-        self.conv6 = make_sdc_ms_block(16, 16, 2)
-        self.conv7 = make_sdc_ms_block(16, 16, 3)
-        self.conv8 = make_sdc_ms_block(16, 16, 4)
+        self.conv5 = make_sdc_ms_block(64, 16, 1)
+        self.conv6 = make_sdc_ms_block(64, 16, 2)
+        self.conv7 = make_sdc_ms_block(64, 16, 3)
+        self.conv8 = make_sdc_ms_block(64, 16, 4)
+
+        self.descriptor = make_vgg_descriptor(descriptor_size)
 
     def forward(self, x):
         """
@@ -38,16 +41,20 @@ class Net(nn.Module):
         x = torch.cat((s1, s2, s3, s4), dim=1)
 
         s5 = self.conv5(x)
-        s6 = self.conv5(x)
-        s7 = self.conv5(x)
-        s8 = self.conv5(x)
+        s6 = self.conv6(x)
+        s7 = self.conv7(x)
+        s8 = self.conv8(x)
 
         x = torch.cat((s5, s6, s7, s8), dim=1)
 
         multi_scale_scores = multi_scale_nms(x, 15)
         score = multi_scale_softmax(multi_scale_scores)
 
-        return score
+        x = self.descriptor(x)
+
+        desc = F.normalize(x)
+
+        return score, desc
 
 
 class NetVGG(nn.Module):

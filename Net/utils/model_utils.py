@@ -23,14 +23,16 @@ def make_vgg_block(in_channels, out_channels):
     conv += [nn.BatchNorm2d(out_channels)]
     conv += [nn.ReLU()]
 
-    return nn.Sequential(*conv)
+    return conv
 
 
 def make_vgg_ms_block(in_channels, out_channels):
+    conv = make_vgg_block(in_channels, out_channels)
+
     score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
     score += [nn.BatchNorm2d(1)]
 
-    return make_vgg_block(in_channels, out_channels), nn.Sequential(*score)
+    return nn.Sequential(*conv), nn.Sequential(*score)
 
 
 def make_sdc_ms_block(in_channels, out_channels, dilation):
@@ -46,9 +48,20 @@ def make_vgg_descriptor(descriptor_size):
     layers += make_vgg_block(64, 64)
     layers += make_vgg_block(64, 64)
 
-    
+    layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
 
+    layers += make_vgg_block(64, 128)
+    layers += make_vgg_block(128, 128)
 
+    layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+
+    layers += make_vgg_block(128, 128)
+    layers += make_vgg_block(128, 128)
+
+    layers += make_vgg_block(128, 256)
+    layers += [nn.Conv2d(256, descriptor_size, kernel_size=1)]
+
+    return nn.Sequential(*layers)
 
 
 """
@@ -106,7 +119,10 @@ def sample_descriptors(desc, kp, grid_size):
     :param kp: N x 4
     :param grid_size: int
     """
-    desc = F.interpolate(desc, scale_factor=grid_size, mode='bilinear', align_corners=True)
-    desc = F.normalize(desc)
+    _, _, h, w = desc.size()
 
-    return desc[kp[:, 0], :, kp[:, 2], kp[:, 3]]
+    kp_grid = kp[:, [3, 2]].unsqueeze(0).unsqueeze(0).float() / grid_size
+    kp_grid[:, :, :, 0] = kp_grid[:, :, :, 0] / (w - 1) * 2 - 1
+    kp_grid[:, :, :, 1] = kp_grid[:, :, :, 1] / (h - 1) * 2 - 1
+
+    return F.grid_sample(desc, kp_grid).squeeze().t()

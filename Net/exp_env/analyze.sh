@@ -8,4 +8,4 @@ mkdir "${log_dir}"
 
 echo "Log dir: ${log_dir}"
 
-python3 /home/konstantin/PycharmProjects/Summertime/Net/exp_env/exp.py --log_dir="${log_dir}" --checkpoint_path="${checkpoint_path}"
+python3 /home/konstantin/PycharmProjects/Summertime/Net/exp_env/analyze.py --log_dir="${log_dir}" --checkpoint_path="${checkpoint_path}"

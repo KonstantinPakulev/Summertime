@@ -135,8 +135,7 @@ __C.TRAIN.NMS_THRESH = 0.0
 __C.TRAIN.NMS_KSIZE = 5
 
 # top k patch
-# TODO. Replace
-__C.TRAIN.TOPK = 128
+__C.TRAIN.TOPK = 512
 
 """
 Image data options

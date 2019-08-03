@@ -13,8 +13,8 @@ from torchvision.utils import make_grid
 from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 
-from Net.config import cfg as cfg_train
-from Net.exp_env.exp_config import cfg as cfg_exp
+from Net.train_config import cfg as cfg_train
+from Net.exp_env.analyze_config import cfg as cfg_exp
 from Net.hpatches_dataset import (
     HPatchesDataset,
     TRAIN,

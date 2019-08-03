@@ -482,3 +482,62 @@
 #     layers += make_vgg_block(256, descriptor_size, 1, 0, None)
 #
 #     return nn.Sequential(*layers)
+
+# class HomoHingeLoss(nn.Module):
+#
+#     def __init__(self, grid_size, pos_lambda, pos_margin, neg_margin):
+#         super().__init__()
+#         self.grid_size = grid_size
+#
+#         self.pos_lambda = pos_lambda
+#
+#         self.pos_margin = pos_margin
+#         self.neg_margin = neg_margin
+#
+#     def forward(self, desc1, desc2, homo21, vis_mask1):
+#         """
+#         :param desc1: N x C x Hr x Wr
+#         :param desc2: N x C x Hr x Wr
+#         :param homo21: N x 3 x 3
+#         :param vis_mask1: Mask of the first image. N x 1 x H x W
+#         Note: 'r' suffix means reduced in 'grid_size' times
+#         """
+#         # We need to account for difference in size between descriptor and image for homography to work
+#         grid = create_coordinates_grid(desc1.size()) * self.grid_size + self.grid_size // 2
+#         grid = grid.type_as(desc1).to(desc1.device)
+#         w_grid = warp_coordinates_grid(grid, homo21)
+#
+#         grid = grid.unsqueeze(dim=3).unsqueeze(dim=3)
+#         w_grid = w_grid.unsqueeze(dim=1).unsqueeze(dim=1)
+#
+#         n, _, hr, wr = desc1.size()
+#
+#         # Reduce spatial dimensions of visibility mask
+#         vis_mask1 = space_to_depth(vis_mask1, self.grid_size).prod(dim=1)
+#         vis_mask1 = vis_mask1.reshape([n, 1, 1, hr, wr])
+#
+#         # Mask with homography induced correspondences
+#         grid_dist = torch.norm(grid - w_grid, dim=-1)
+#         ones = torch.ones_like(grid_dist)
+#         zeros = torch.zeros_like(grid_dist)
+#         s = torch.where(grid_dist <= self.grid_size - 0.5, ones, zeros)
+#
+#         ns = 1 - s
+#
+#         # Apply visibility mask
+#         s *= vis_mask1
+#         ns *= vis_mask1
+#
+#         desc1 = desc1.unsqueeze(4).unsqueeze(4)
+#         desc2 = desc2.unsqueeze(2).unsqueeze(2)
+#         dot_desc = torch.sum(desc1 * desc2, dim=1)
+#
+#         pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
+#         neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
+#
+#         loss = self.pos_lambda * s * pos_dist + ns * neg_dist
+#
+#         norm = hr * wr * vis_mask1.sum()
+#         loss = loss.sum() / norm
+#
+#         return loss

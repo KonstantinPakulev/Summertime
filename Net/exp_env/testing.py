@@ -1,17 +1,21 @@
 import torch
+import torch.nn.functional as F
 import numpy
 import cv2
 
-from Net.nn.model import NetRF, NetVGG, Net
+from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, warp_keypoints
+from Net.utils.model_utils import sample_descriptors
 
-torch.manual_seed(99)
-numpy.random.seed(99)
+torch.manual_seed(9)
 
-score1 = torch.ones((1, 1, 240, 320))
+score = torch.rand((4, 4))
 
-model = Net()
+print(score)
 
-print(model(score1).shape)
+print(score.diag())
 
+score -= torch.eye(score.size(0)) * 2
+
+print(score)
 
 

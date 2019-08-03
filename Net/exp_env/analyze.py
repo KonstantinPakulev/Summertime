@@ -1,7 +1,6 @@
 import os
 import cv2
 import sys
-from skimage import io, color
 import numpy as np
 from argparse import ArgumentParser
 
@@ -10,7 +9,6 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 import torch
-from torch.optim import Adam
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
 from torchvision.utils import make_grid
@@ -18,29 +16,22 @@ from torchvision.utils import make_grid
 from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 
-from Net.exp_env.exp_config import cfg
-from Net.nn.model import NetRF, NetVGG
+from Net.exp_env.analyze_config import cfg
+from Net.nn.model import NetVGG
 from Net.hpatches_dataset import (
     HPatchesDataset,
-    TRAIN,
-    VALIDATE,
-    VALIDATE_SHOW,
 
     IMAGE1,
     IMAGE2,
-    HOMO,
+    HOMO12,
     S_IMAGE1,
     S_IMAGE2,
 
     Grayscale,
     Normalize,
-    RandomCrop,
     Rescale,
     ToTensor
 )
-from Net.utils.eval_utils import (l_collect_show,
-                                  plot_keypoints)
-from Net.utils.ignite_utils import CollectMetric
 from Net.utils.image_utils import warp_image, select_keypoints
 
 
@@ -62,14 +53,14 @@ def kp2cv(kp):
 
 def test(device, log_dir, checkpoint_path):
     dataset = HPatchesDataset(root_path=cfg.DATASET.view.root,
-                              csv_file="exp.csv",
+                              csv_file=cfg.DATASET.view.analyze_csv,
                               transform=transforms.Compose([
                                   Grayscale(),
                                   Normalize(mean=cfg.DATASET.view.MEAN, std=cfg.DATASET.view.STD),
                                   Rescale((960, 1280)),
                                   Rescale((480, 640)),
                                   ToTensor(),
-                              ]), include_originals=True)
+                              ]), include_sources=True)
 
     loader = DataLoader(dataset, 1, False)
 
@@ -82,7 +73,7 @@ def test(device, log_dir, checkpoint_path):
         image1, image2, homo, s_image1, s_image2 = (
             batch[IMAGE1].to(device),
             batch[IMAGE2].to(device),
-            batch[HOMO].to(device),
+            batch[HOMO12].to(device),
             batch[S_IMAGE1].to(device),
             batch[S_IMAGE2].to(device)
         )

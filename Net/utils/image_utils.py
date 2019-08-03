@@ -4,7 +4,6 @@ from skimage import transform
 import torch
 import torch.nn.functional as F
 
-
 """
 Image manipulations
 """
@@ -42,6 +41,20 @@ def crop_image(image, rect):
     top, bottom, left, right = rect
 
     return image[top: bottom, left: right]
+
+
+def filter_border(image, radius=8):
+    """
+    :param image: N x C x H x W
+    :param radius: int
+    """
+    _, _, h, w = image.size()
+    r2 = radius * 2
+
+    mask = torch.ones((1, 1, h - r2, w - r2)).to(image.device)
+    mask = F.pad(input=mask, pad=[radius, radius, radius, radius, 0, 0, 0, 0])
+
+    return image * mask
 
 
 """
@@ -101,11 +114,11 @@ def crop_homography(homography, rect1=None, rect2=None):
     return homography
 
 
-def create_coordinates_grid(output_size):
+def create_coordinates_grid(target_image):
     """
-    :param output_size: (n, c, h, w)
+    :param target_image: (n, c, h, w)
     """
-    n, _, h, w = output_size
+    n, _, h, w = target_image
 
     gy, gx = torch.meshgrid([torch.arange(h), torch.arange(w)])
     gx = gx.float().unsqueeze(-1)
@@ -123,7 +136,7 @@ def create_coordinates_grid(output_size):
 def warp_coordinates_grid(grid, homography):
     """
     :param grid: N x H x W x 2
-    :param homography: 3 x 3
+    :param homography: N x 3 x 3
     """
     n, h, w, _ = grid.size()
 
@@ -146,22 +159,51 @@ def warp_coordinates_grid(grid, homography):
     return w_grid
 
 
-def warp_image(image, homography):
+def warp_keypoints(keypoints, homography):
     """
-    :param image: N x C x H x W
-    :param homography: 3 x 3
+    :param keypoints: K x 4
+    :param homography: N x 3 x 3
+    """
+
+    # We need to warp only spatial coordinates.
+    #  Because warping operates on x,y coordinates we also need to swap h and w
+    s_keypoints = keypoints[:, [3, 2]].float()
+    ones = torch.ones((keypoints.size(0), 1)).to(keypoints.device)
+    s_keypoints = torch.cat((s_keypoints, ones), dim=-1)  # N x 3, warp only spatial coordinates
+    s_keypoints = s_keypoints.permute(1, 0)  # 3 x N
+
+    # Warp keypoints
+    ws_keypoints = torch.matmul(homography, s_keypoints).squeeze(0)
+    ws_keypoints = ws_keypoints.permute(1, 0)  # N x 3
+
+    # Convert coordinates from homogeneous to cartesian
+    ws_keypoints = ws_keypoints / (ws_keypoints[:, 2].unsqueeze(dim=-1) + 1e-8)
+    # Restore original ordering
+    ws_keypoints = ws_keypoints[:, [1, 0]]
+
+    w_keypoints = keypoints.clone()
+    w_keypoints[:, 2:] = ws_keypoints.round().long()
+
+    return w_keypoints
+
+
+def warp_image(target_image, source_image, homo_t2s):
+    """
+    :param target_image: N x C x oH x oW
+    :param source_image: N x C x iH x iW
+    :param homo_t2s: N x 3 x 3; A homography to warp coordinates from target to source
     :return w_image: N x C x H x W
     """
-    _, _, h, w = image.size()
+    _, _, h, w = target_image.size()
 
-    grid = create_coordinates_grid(image.size()).to(image.device)
-    w_grid = warp_coordinates_grid(grid, homography)
+    grid = create_coordinates_grid(target_image.size()).to(target_image.device)
+    w_grid = warp_coordinates_grid(grid, homo_t2s)
 
     # Normalize coordinates in range [-1, 1]
     w_grid[:, :, :, 0] = w_grid[:, :, :, 0] / (w - 1) * 2 - 1
     w_grid[:, :, :, 1] = w_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
-    w_image = F.grid_sample(image, w_grid)  # N x C x H x W
+    w_image = F.grid_sample(source_image, w_grid)  # N x C x H x W
 
     return w_image
 
@@ -285,6 +327,9 @@ def select_keypoints(score, thresh, k_size, top_k):
     n, c, h, w = score.size()
     flat = h * w
 
+    # Filter borders
+    score = filter_border(score)
+
     # Apply nms
     score = nms(score, thresh, k_size)
 
@@ -300,7 +345,3 @@ def select_keypoints(score, thresh, k_size, top_k):
     keypoints = top_score.nonzero()
 
     return top_score, keypoints
-
-
-
-
