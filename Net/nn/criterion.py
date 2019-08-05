@@ -1,3 +1,4 @@
+import math
 from bisect import bisect
 
 import torch
@@ -16,7 +17,7 @@ from Net.utils.image_utils import (create_coordinates_grid,
 from Net.utils.model_utils import sample_descriptors, space_to_depth
 
 
-class HomoMSELoss(nn.Module):
+class MSELoss(nn.Module):
 
     def __init__(self, nms_thresh, nms_k_size, top_k, gauss_k_size, gauss_sigma, loss_lambda):
         super().__init__()
@@ -56,12 +57,11 @@ class HomoMSELoss(nn.Module):
         return loss, kp1, vis_mask1
 
 
-class ReceptiveHomoHingeLoss(nn.Module):
+class ReceptiveHingeLoss(nn.Module):
 
     def __init__(self, grid_size,
                  pos_margin, neg_margin,
-                 loss_lambda,
-                 dilate_ks_sizes, dilate_ks_iters):
+                 loss_lambda):
         super().__init__()
         self.grid_size = grid_size
 
@@ -70,18 +70,7 @@ class ReceptiveHomoHingeLoss(nn.Module):
 
         self.loss_lambda = loss_lambda
 
-        self.dilate_ks_sizes = dilate_ks_sizes
-        self.dilate_ks_iters = dilate_ks_iters
-
-    def get_dilate_ks(self, iteration):
-        index = bisect(self.dilate_ks_iters, iteration)
-
-        if index >= len(self.dilate_ks_iters):
-            return self.dilate_ks_sizes[-1]
-        else:
-            return self.dilate_ks_sizes[index]
-
-    def forward(self, kp1, desc1, desc2, homo21, vis_mask1, iteration):
+    def forward(self, kp1, desc1, desc2, homo21, vis_mask1):
         """
         :param kp1: K x 4
         :param desc1: N x C x Hr x Wr
@@ -89,7 +78,6 @@ class ReceptiveHomoHingeLoss(nn.Module):
         :param homo21: N x 3 x 3
         :param vis_mask1: Mask of the first image. N x 1 x H x W
         Note: 'r' suffix means reduced in 'grid_size' times
-        :param iteration: int
         """
 
         # Move keypoints coordinates to reduced spatial size
@@ -117,11 +105,14 @@ class ReceptiveHomoHingeLoss(nn.Module):
         zeros = torch.zeros_like(grid_dist)
         s = torch.where(grid_dist <= self.grid_size - 0.5, ones, zeros)
 
-        dilate_ks = self.get_dilate_ks(iteration)
+        ks1, ks2, ks3 = 31, 11, 5
+        sigma1, sigma2, sigma3 = 7, 4, 2
 
         ns = s.clone().view(-1, 1, hr, wr)
-        ns = dilate_filter(ns, dilate_ks).view(n, kp1.size(0), hr, wr)
-        ns = ns - s
+        ns1 = gaussian_filter(ns, ks1, sigma1).view(n, kp1.size(0), hr, wr) - s
+        ns2 = gaussian_filter(ns, ks2, sigma2).view(n, kp1.size(0), hr, wr) - s
+        ns3 = gaussian_filter(ns, ks3, sigma3).view(n, kp1.size(0), hr, wr) - s
+        ns = ns1 + ns2 + ns3
 
         # Apply visibility mask
         s *= vis_mask1
@@ -138,7 +129,7 @@ class ReceptiveHomoHingeLoss(nn.Module):
         pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
         neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
 
-        neg_per_pos = dilate_ks ** 2 - 1
+        neg_per_pos = 374.359
         pos_lambda = neg_per_pos * 0.3
 
         loss = pos_lambda * s * pos_dist + ns * neg_dist
@@ -149,107 +140,66 @@ class ReceptiveHomoHingeLoss(nn.Module):
         return loss, kp1_desc
 
 
-class HomoTripletLoss(nn.Module):
+class HardTripletLoss(nn.Module):
 
-    def __init__(self, grid_size, margin, neighbour_thresh, loss_lambda):
+    def __init__(self, grid_size, margin, loss_lambda):
         super().__init__()
 
         self.grid_size = grid_size
 
         self.margin = margin
-        self.neighbour_thresh = neighbour_thresh
 
         self.loss_lambda = loss_lambda
 
-    def forward(self, kp1, desc1, desc2, homo12):
-        # Sample anchor descriptors
-        anchor_desc = sample_descriptors(desc1, kp1, self.grid_size)
-
-        # Sample positive descriptors
-        w_kp1 = warp_keypoints(kp1, homo12)
-        positive_desc = sample_descriptors(desc2, w_kp1, self.grid_size)
-
-        dot_desc = torch.mm(anchor_desc, positive_desc.t())
-        positive = dot_desc.diag()
-
-        factor = 3
-
-        # Remove diagonal from calculations
-        dot_desc -= torch.eye(anchor_desc.size(0)).to(anchor_desc.device) * factor
-
-        # Also remove elements that are to close anchor and positive keypoints to not to pick them as negatives
-        anchor_n_mask = torch.pairwise_distance(kp1[:, 2:].float(), kp1[:, 2:].float()).lt(self.neighbour_thresh)
-        dot_desc -= anchor_n_mask.float() * factor
-
-        positive_n_mask = torch.pairwise_distance(w_kp1[:, 2:].float(), w_kp1[:, 2:].float()).lt(self.neighbour_thresh)
-        dot_desc -= positive_n_mask.float() * factor
-
-        rn = dot_desc.max(0)[0]
-        cn = dot_desc.max(1)[0]
-        negative = torch.max(rn, cn)
-
-        triplet_loss = torch.clamp(positive.sum() - negative + self.margin, min=0.0).mean() * self.loss_lambda
-
-        return triplet_loss, anchor_desc, w_kp1
-
-
-class HomoHingeLoss(nn.Module):
-
-    def __init__(self, grid_size, pos_lambda, pos_margin, neg_margin, loss_lambda):
-        super().__init__()
-        self.grid_size = grid_size
-
-        self.pos_lambda = pos_lambda
-
-        self.pos_margin = pos_margin
-        self.neg_margin = neg_margin
-
-        self.loss_lambda = loss_lambda
-
-    def forward(self, desc1, desc2, homo21, vis_mask1):
+    def forward(self, kp1, desc1, desc2, homo21, vis_mask1):
         """
+        :param kp1: K x 4
         :param desc1: N x C x Hr x Wr
         :param desc2: N x C x Hr x Wr
         :param homo21: N x 3 x 3
         :param vis_mask1: Mask of the first image. N x 1 x H x W
         Note: 'r' suffix means reduced in 'grid_size' times
         """
-        # Because desc is in reduced coordinate space we need to create a mapping to original coordinates
-        grid = create_coordinates_grid(desc1.size()) * self.grid_size + self.grid_size // 2
-        grid = grid.type_as(desc1).to(desc1.device)
-        w_grid = warp_coordinates_grid(grid, homo21)
 
-        grid = grid.unsqueeze(dim=3).unsqueeze(dim=3)
-        w_grid = w_grid.unsqueeze(dim=1).unsqueeze(dim=1)
+        # Move keypoints coordinates to reduced spatial size
+        kp_grid = kp1[:, [3, 2]].unsqueeze(0).float()
+        kp_grid[:, 0] = kp_grid[:, 0] / self.grid_size
+        kp_grid[:, 1] = kp_grid[:, 1] / self.grid_size
+
+        # Warp reduced coordinate grid to desc1 viewpoint
+        w_grid = create_coordinates_grid(desc2.size()) * self.grid_size + self.grid_size // 2
+        w_grid = w_grid.type_as(desc2).to(desc2.device)
+        w_grid = warp_coordinates_grid(w_grid, homo21)
+
+        kp_grid = kp_grid.unsqueeze(2).unsqueeze(2)
+        w_grid = w_grid.unsqueeze(1)
 
         n, _, hr, wr = desc1.size()
 
         # Reduce spatial dimensions of visibility mask
         vis_mask1 = space_to_depth(vis_mask1, self.grid_size).prod(dim=1)
-        vis_mask1 = vis_mask1.reshape([n, 1, 1, hr, wr])
+        vis_mask1 = vis_mask1.reshape([n, 1, hr, wr])
 
         # Mask with homography induced correspondences
-        grid_dist = torch.norm(grid - w_grid, dim=-1)
-        ones = torch.ones_like(grid_dist)
-        zeros = torch.zeros_like(grid_dist)
-        s = torch.where(grid_dist <= self.grid_size - 0.5, ones, zeros)
-
+        grid_dist = torch.norm(kp_grid - w_grid, dim=-1)
+        s = (grid_dist <= self.grid_size - 0.5).float()
         ns = 1 - s
 
         # Apply visibility mask
         s *= vis_mask1
         ns *= vis_mask1
 
-        desc1 = desc1.unsqueeze(4).unsqueeze(4)
-        desc2 = desc2.unsqueeze(2).unsqueeze(2)
-        dot_desc = torch.sum(desc1 * desc2, dim=1)
+        # Sample descriptors
+        kp1_desc = sample_descriptors(desc1, kp1, self.grid_size)
 
-        pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
-        neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
+        # Calculate distance pairs
+        s_kp1_desc = kp1_desc.permute(1, 0).unsqueeze(0).unsqueeze(3).unsqueeze(3)
+        s_desc2 = desc2.unsqueeze(2)
+        dist_desc = torch.norm(s_kp1_desc - s_desc2, dim=1)
 
-        loss = self.pos_lambda * s * pos_dist + ns * neg_dist
+        pos_dist = (dist_desc - ns * 5).view(n, kp1.size(0), -1).max(dim=-1)[0]
+        neg_dist = (dist_desc + s * 5).view(n, kp1.size(0), -1).min(dim=-1)[0]
 
-        norm = hr * wr * vis_mask1.sum()
-        loss = loss.sum() / norm * self.loss_lambda
+        loss = torch.clamp(pos_dist - neg_dist + self.margin, min=0.0).mean() * self.loss_lambda
 
-        return loss
+        return loss, kp1_desc

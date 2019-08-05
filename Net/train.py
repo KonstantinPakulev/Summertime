@@ -17,7 +17,7 @@ from ignite.engine import Engine, Events
 from ignite.handlers import ModelCheckpoint, Timer
 
 from Net.nn.model import Net
-from Net.nn.criterion import HomoMSELoss, ReceptiveHomoHingeLoss, HomoTripletLoss, HomoHingeLoss
+from Net.nn.criterion import MSELoss, ReceptiveHingeLoss, HardTripletLoss
 from Net.hpatches_dataset import (
     HPatchesDataset,
 
@@ -227,18 +227,14 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
     model = Net(config.MODEL.DESCRIPTOR_SIZE).to(device)
 
-    det_criterion = HomoMSELoss(config.LOSS.NMS_THRESH, config.LOSS.NMS_K_SIZE,
-                                config.LOSS.TOP_K,
-                                config.LOSS.GAUSS_K_SIZE, config.LOSS.GAUSS_SIGMA, config.LOSS.DET_LAMBDA)
-    # des_criterion = HomoTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN,
-    #                                 config.METRIC.DET_THRESH, config.LOSS.DES_LAMBDA_TRI)
-    # des_criterion = HomoHingeLoss(config.MODEL.GRID_SIZE, config.LOSS.POS_LAMBDA,
-    #                               config.LOSS.POS_MARGIN, config.LOSS.NEG_MARGIN, config.LOSS.DES_LAMBDA_HIN)
+    det_criterion = MSELoss(config.LOSS.NMS_THRESH, config.LOSS.NMS_K_SIZE,
+                            config.LOSS.TOP_K,
+                            config.LOSS.GAUSS_K_SIZE, config.LOSS.GAUSS_SIGMA, config.LOSS.DET_LAMBDA)
 
-    des_criterion = ReceptiveHomoHingeLoss(config.MODEL.GRID_SIZE,
-                                           config.LOSS.POS_MARGIN, config.LOSS.NEG_MARGIN,
-                                           config.LOSS.DES_LAMBDA_HIN,
-                                           config.LOSS.DILATE_KS_SIZES, config.LOSS.DILATE_KS_ITERS)
+    # hinge_criterion = ReceptiveHomoHingeLoss(config.MODEL.GRID_SIZE,
+    #                                          config.LOSS.POS_MARGIN, config.LOSS.NEG_MARGIN,
+    #                                          config.LOSS.DES_LAMBDA_HIN)
+    triplet_criterion = HardTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.LOSS.DES_LAMBDA_TRI)
 
     optimizer = Adam(model.parameters(), lr=config.TRAIN.LR, weight_decay=config.TRAIN.WEIGHT_DECAY)
 
@@ -256,24 +252,19 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         det_loss1, kp1, vis_mask1 = det_criterion(score1, score2, homo12)
         det_loss2, kp2, vis_mask2 = det_criterion(score2, score1, homo21)
 
-        # des_loss1 = des_criterion(desc1, desc2, homo21, vis_mask1)
-        # des_loss2 = des_criterion(desc2, desc1, homo12, vis_mask2)
+        des_loss1, kp1_desc = triplet_criterion(kp1, desc1, desc2, homo21, vis_mask1)
+        des_loss2, kp2_desc = triplet_criterion(kp2, desc2, desc1, homo12, vis_mask2)
 
-        des_loss1, kp1_desc = des_criterion(kp1, desc1, desc2, homo21, vis_mask1, train_iter)
-        des_loss2, kp2_desc = des_criterion(kp2, desc2, desc1, homo12, vis_mask2, train_iter)
+        # des_loss1, kp1_desc = hinge_criterion(kp1, desc1, desc2, homo21, vis_mask1)
+        # des_loss2, kp2_desc = hinge_criterion(kp2, desc2, desc1, homo12, vis_mask2)
+
+        w_kp1 = warp_keypoints(kp1, homo12)
+        w_kp2 = warp_keypoints(kp2, homo21)
 
         det_loss = (det_loss1 + det_loss2) / 2
         des_loss = (des_loss1 + des_loss2) / 2
 
         loss = det_loss + des_loss
-
-        # Warp points and sample descriptors
-
-        w_kp1 = warp_keypoints(kp1, homo12)
-        w_kp2 = warp_keypoints(kp2, homo21)
-
-        # kp1_desc = sample_descriptors(desc1, kp1, config.MODEL.GRID_SIZE)
-        # kp2_desc = sample_descriptors(desc2, kp2, config.MODEL.GRID_SIZE)
 
         return {
             LOSS: loss,
@@ -390,6 +381,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_dir", type=str)
     parser.add_argument("--checkpoint_dir", type=str)
     parser.add_argument("--config", type=str)
+    parser.add_argument("--load_path", type=str)
 
     args = parser.parse_args()
 
