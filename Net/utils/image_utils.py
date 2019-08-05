@@ -114,11 +114,11 @@ def crop_homography(homography, rect1=None, rect2=None):
     return homography
 
 
-def create_coordinates_grid(target_image):
+def create_coordinates_grid(target_image_size):
     """
-    :param target_image: (n, c, h, w)
+    :param target_image_size: (n, c, h, w)
     """
-    n, _, h, w = target_image
+    n, _, h, w = target_image_size
 
     gy, gx = torch.meshgrid([torch.arange(h), torch.arange(w)])
     gx = gx.float().unsqueeze(-1)

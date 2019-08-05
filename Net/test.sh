@@ -10,4 +10,4 @@ mkdir "${checkpoint_dir}"
 echo "Log dir: ${log_dir}"
 echo "Checkpoints dir:: ${checkpoint_dir}"
 
-python3 /home/konstantin/PycharmProjects/Summertime/Net/train.py --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}" --config="test"
+python3 ./train.py --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}" --config="test"

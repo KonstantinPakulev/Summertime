@@ -17,7 +17,7 @@ from ignite.engine import Engine, Events
 from ignite.handlers import ModelCheckpoint, Timer
 
 from Net.nn.model import Net
-from Net.nn.criterion import HomoMSELoss, HomoTripletLoss
+from Net.nn.criterion import HomoMSELoss, ReceptiveHomoHingeLoss, HomoTripletLoss, HomoHingeLoss
 from Net.hpatches_dataset import (
     HPatchesDataset,
 
@@ -195,7 +195,6 @@ def inference(model, batch, device, config):
     }
 
 
-# TODO. Perform optimization and calculate all needed information after iteration procedure
 def train(config, device, num_workers, log_dir, checkpoint_dir):
     """
     :param config: config to use
@@ -230,12 +229,20 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
     det_criterion = HomoMSELoss(config.LOSS.NMS_THRESH, config.LOSS.NMS_K_SIZE,
                                 config.LOSS.TOP_K,
-                                config.LOSS.GAUSS_K_SIZE, config.LOSS.GAUSS_SIGMA)
-    des_criterion = HomoTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.METRIC.DET_THRESH)
+                                config.LOSS.GAUSS_K_SIZE, config.LOSS.GAUSS_SIGMA, config.LOSS.DET_LAMBDA)
+    # des_criterion = HomoTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN,
+    #                                 config.METRIC.DET_THRESH, config.LOSS.DES_LAMBDA_TRI)
+    # des_criterion = HomoHingeLoss(config.MODEL.GRID_SIZE, config.LOSS.POS_LAMBDA,
+    #                               config.LOSS.POS_MARGIN, config.LOSS.NEG_MARGIN, config.LOSS.DES_LAMBDA_HIN)
+
+    des_criterion = ReceptiveHomoHingeLoss(config.MODEL.GRID_SIZE,
+                                           config.LOSS.POS_MARGIN, config.LOSS.NEG_MARGIN,
+                                           config.LOSS.DES_LAMBDA_HIN,
+                                           config.LOSS.DILATE_KS_SIZES, config.LOSS.DILATE_KS_ITERS)
 
     optimizer = Adam(model.parameters(), lr=config.TRAIN.LR, weight_decay=config.TRAIN.WEIGHT_DECAY)
 
-    def iteration(engine, batch):
+    def iteration(engine, batch, train_iter):
         image1, image2, homo12, homo21 = (
             batch[IMAGE1].to(device),
             batch[IMAGE2].to(device),
@@ -246,16 +253,27 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         score1, desc1 = model(image1)
         score2, desc2 = model(image2)
 
-        det_loss1, kp1 = det_criterion(score1, score2, homo12)
-        det_loss2, kp2 = det_criterion(score2, score1, homo21)
+        det_loss1, kp1, vis_mask1 = det_criterion(score1, score2, homo12)
+        det_loss2, kp2, vis_mask2 = det_criterion(score2, score1, homo21)
 
-        des_loss1, kp1_desc, w_kp1 = des_criterion(kp1, desc1, desc2, homo12)
-        des_loss2, kp2_desc, w_kp2 = des_criterion(kp2, desc2, desc1, homo21)
+        # des_loss1 = des_criterion(desc1, desc2, homo21, vis_mask1)
+        # des_loss2 = des_criterion(desc2, desc1, homo12, vis_mask2)
 
-        det_loss = (det_loss1 + det_loss2) / 2 * config.LOSS.DET_LAMBDA
-        des_loss = (des_loss1 + des_loss2) / 2 * config.LOSS.DES_LAMBDA
+        des_loss1, kp1_desc = des_criterion(kp1, desc1, desc2, homo21, vis_mask1, train_iter)
+        des_loss2, kp2_desc = des_criterion(kp2, desc2, desc1, homo12, vis_mask2, train_iter)
+
+        det_loss = (det_loss1 + det_loss2) / 2
+        des_loss = (des_loss1 + des_loss2) / 2
 
         loss = det_loss + des_loss
+
+        # Warp points and sample descriptors
+
+        w_kp1 = warp_keypoints(kp1, homo12)
+        w_kp2 = warp_keypoints(kp2, homo21)
+
+        # kp1_desc = sample_descriptors(desc1, kp1, config.MODEL.GRID_SIZE)
+        # kp2_desc = sample_descriptors(desc2, kp2, config.MODEL.GRID_SIZE)
 
         return {
             LOSS: loss,
@@ -277,20 +295,24 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
         optimizer.zero_grad()
 
-        endpoint = iteration(engine, batch)
+        endpoint = iteration(engine, batch, engine.state.iteration)
         endpoint[LOSS].backward()
 
         optimizer.step()
 
         return prepare_output_dict(batch, endpoint, device, config)
 
+    trainer = Engine(train_iteration)
+
     def validation_iteration(engine, batch):
         model.eval()
 
         with torch.no_grad():
-            endpoint = iteration(engine, batch)
+            endpoint = iteration(engine, batch, trainer.state.iteration)
 
         return prepare_output_dict(batch, endpoint, device, config)
+
+    validator = Engine(validation_iteration)
 
     def validation_show_iteration(engine, batch):
         model.eval()
@@ -300,8 +322,6 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
         return endpoint
 
-    trainer = Engine(train_iteration)
-    validator = Engine(validation_iteration)
     validator_show = Engine(validation_show_iteration)
 
     # TODO. Save the best model by providing score function and include it in files name. LATER
@@ -313,7 +333,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
     Visualisation utils, logging and metrics
     """
 
-    writer = SummaryWriter(logdir=log_dir)
+    writer = SummaryWriter(log_dir=log_dir)
 
     attach_metrics(trainer, config)
     attach_metrics(validator, config)

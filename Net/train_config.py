@@ -14,10 +14,28 @@ Loss settings
 """
 cfg.LOSS = EasyDict()
 
-cfg.LOSS.DET_LAMBDA = 100000
-cfg.LOSS.DES_LAMBDA = 0.1
-
+"""
+Triplet loss
+"""
+cfg.LOSS.DES_LAMBDA_TRI = 0.1
 cfg.LOSS.MARGIN = 1
+
+"""
+Pair hinge loss
+"""
+cfg.LOSS.DES_LAMBDA_HIN = 1
+
+cfg.LOSS.POS_MARGIN = 1
+cfg.LOSS.NEG_MARGIN = 0.2
+
+cfg.LOSS.POS_LAMBDA = 250
+cfg.LOSS.DILATE_KS_SIZES = [11]
+cfg.LOSS.DILATE_KS_ITERS = [0]
+
+"""
+MSE loss
+"""
+cfg.LOSS.DET_LAMBDA = 100000
 
 cfg.LOSS.NMS_THRESH = 0.0
 cfg.LOSS.NMS_K_SIZE = 5
@@ -26,6 +44,7 @@ cfg.LOSS.TOP_K = 512
 
 cfg.LOSS.GAUSS_K_SIZE = 15
 cfg.LOSS.GAUSS_SIGMA = 0.5
+
 """
 Metric settings
 """
