@@ -6,7 +6,7 @@ from bisect import bisect
 
 from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, warp_keypoints, gaussian_filter
 from Net.utils.model_utils import sample_descriptors
-from Net.nn.criterion import ReceptiveHingeLoss, HardTripletLoss
+from Net.nn.criterion import HingeLoss, HardTripletLoss
 
 torch.set_printoptions(precision=3, sci_mode=False, linewidth=9099999)
 

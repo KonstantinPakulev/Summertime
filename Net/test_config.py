@@ -23,12 +23,12 @@ cfg.LOSS.MARGIN = 1
 """
 Pair hinge loss
 """
-cfg.LOSS.DES_LAMBDA_HIN = 1
+cfg.LOSS.DES_LAMBDA_HIN = 0.1
 
 cfg.LOSS.POS_MARGIN = 1
 cfg.LOSS.NEG_MARGIN = 0.2
 
-cfg.LOSS.POS_LAMBDA = 250
+cfg.LOSS.NEG_SAMPLES = 10
 
 """
 MSE loss

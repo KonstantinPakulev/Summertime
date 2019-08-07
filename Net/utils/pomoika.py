@@ -129,3 +129,62 @@
 #
 #         pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
 #         neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
+# Move keypoints coordinates to reduced spatial size
+# # TODO. SHTO ETO ZA HUINYA, BRATIK?
+# kp_grid = kp1[:, [3, 2]].unsqueeze(0).float()
+# kp_grid[:, 0] = kp_grid[:, 0] / self.grid_size
+# kp_grid[:, 1] = kp_grid[:, 1] / self.grid_size
+#
+# # Warp reduced coordinate grid to desc1 viewpoint
+# w_grid = create_coordinates_grid(desc2.size()) * self.grid_size + self.grid_size // 2
+# w_grid = w_grid.type_as(desc2).to(desc2.device)
+# w_grid = warp_coordinates_grid(w_grid, homo21)
+#
+# kp_grid = kp_grid.unsqueeze(2).unsqueeze(2)
+# w_grid = w_grid.unsqueeze(1)
+#
+# n, _, hr, wr = desc1.size()
+#
+# # Reduce spatial dimensions of visibility mask
+# vis_mask1 = space_to_depth(vis_mask1, self.grid_size).prod(dim=1)
+# vis_mask1 = vis_mask1.reshape([n, 1, hr, wr])
+#
+# # Mask with homography induced correspondences
+# grid_dist = torch.norm(kp_grid - w_grid, dim=-1)
+# ones = torch.ones_like(grid_dist)
+# zeros = torch.zeros_like(grid_dist)
+# s = torch.where(grid_dist <= self.grid_size - 0.5, ones, zeros)
+#
+# ks1, ks2, ks3 = 31, 11, 5
+# sigma1, sigma2, sigma3 = 7, 4, 2
+#
+# ns = s.clone().view(-1, 1, hr, wr)
+# ns1 = gaussian_filter(ns, ks1, sigma1).view(n, kp1.size(0), hr, wr) - s
+# ns2 = gaussian_filter(ns, ks2, sigma2).view(n, kp1.size(0), hr, wr) - s
+# ns3 = gaussian_filter(ns, ks3, sigma3).view(n, kp1.size(0), hr, wr) - s
+# ns = ns1 + ns2 + ns3
+#
+# # Apply visibility mask
+# s *= vis_mask1
+# ns *= vis_mask1
+#
+# # Sample descriptors
+# kp1_desc = sample_descriptors(desc1, kp1, self.grid_size)
+#
+# # Calculate distance pairs
+# s_kp1_desc = kp1_desc.permute(1, 0).unsqueeze(0).unsqueeze(3).unsqueeze(3)
+# s_desc2 = desc2.unsqueeze(2)
+# dot_desc = torch.sum(s_kp1_desc * s_desc2, dim=1)
+#
+# pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
+# neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
+#
+# neg_per_pos = 374.359
+# pos_lambda = neg_per_pos * 0.3
+#
+# loss = pos_lambda * s * pos_dist + ns * neg_dist
+#
+# norm = kp1.size(0) * neg_per_pos
+# loss = loss.sum() / norm * self.loss_lambda
+#
+# return loss, kp1_desc

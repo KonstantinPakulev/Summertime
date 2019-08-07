@@ -54,13 +54,14 @@ class MSELoss(nn.Module):
         loss = F.mse_loss(score1, gt_score1, reduction='none') * vis_mask1 / norm
         loss = loss.sum() * self.loss_lambda
 
-        return loss, kp1, vis_mask1
+        return loss, kp1
 
 
-class ReceptiveHingeLoss(nn.Module):
+class HingeLoss(nn.Module):
 
     def __init__(self, grid_size,
                  pos_margin, neg_margin,
+                 neg_samples,
                  loss_lambda):
         super().__init__()
         self.grid_size = grid_size
@@ -68,76 +69,35 @@ class ReceptiveHingeLoss(nn.Module):
         self.pos_margin = pos_margin
         self.neg_margin = neg_margin
 
+        self.neg_samples = neg_samples
+
         self.loss_lambda = loss_lambda
 
-    def forward(self, kp1, desc1, desc2, homo21, vis_mask1):
-        """
-        :param kp1: K x 4
-        :param desc1: N x C x Hr x Wr
-        :param desc2: N x C x Hr x Wr
-        :param homo21: N x 3 x 3
-        :param vis_mask1: Mask of the first image. N x 1 x H x W
-        Note: 'r' suffix means reduced in 'grid_size' times
-        """
+    def forward(self, kp1, w_kp1, kp2, kp1_desc, kp2_desc, desc2):
+        w_kp1_grid = w_kp1.float().unsqueeze(1)
+        kp2_grid = kp2.float().unsqueeze(0)
 
-        # Move keypoints coordinates to reduced spatial size
-        kp_grid = kp1[:, [3, 2]].unsqueeze(0).float()
-        kp_grid[:, 0] = kp_grid[:, 0] / self.grid_size
-        kp_grid[:, 1] = kp_grid[:, 1] / self.grid_size
+        grid_dist = torch.norm(w_kp1_grid - kp2_grid, dim=-1)
+        radius = math.sqrt(self.grid_size ** 2 / 2)
+        neighbour_mask = (grid_dist <= 2 * radius + 0.1).float()
 
-        # Warp reduced coordinate grid to desc1 viewpoint
-        w_grid = create_coordinates_grid(desc2.size()) * self.grid_size + self.grid_size // 2
-        w_grid = w_grid.type_as(desc2).to(desc2.device)
-        w_grid = warp_coordinates_grid(w_grid, homo21)
+        positive = sample_descriptors(desc2, w_kp1, self.grid_size)
 
-        kp_grid = kp_grid.unsqueeze(2).unsqueeze(2)
-        w_grid = w_grid.unsqueeze(1)
+        # Cosine similarity measure
+        desc_dot = torch.mm(kp1_desc, kp2_desc.t())
+        desc_dot = desc_dot - neighbour_mask * 5
 
-        n, _, hr, wr = desc1.size()
+        positive_dot = (kp1_desc * positive).sum(dim=-1)
+        negative_dot = desc_dot.topk(self.neg_samples, dim=-1)[0]
 
-        # Reduce spatial dimensions of visibility mask
-        vis_mask1 = space_to_depth(vis_mask1, self.grid_size).prod(dim=1)
-        vis_mask1 = vis_mask1.reshape([n, 1, hr, wr])
+        balance_factor = self.neg_samples / 3.0
+        loss = torch.clamp(self.pos_margin - positive_dot, min=0).sum() * balance_factor + \
+               torch.clamp(negative_dot - self.neg_margin, min=0).sum()
 
-        # Mask with homography induced correspondences
-        grid_dist = torch.norm(kp_grid - w_grid, dim=-1)
-        ones = torch.ones_like(grid_dist)
-        zeros = torch.zeros_like(grid_dist)
-        s = torch.where(grid_dist <= self.grid_size - 0.5, ones, zeros)
+        norm = self.loss_lambda / (kp1_desc.size(0) * self.neg_samples)
+        loss = loss * norm
 
-        ks1, ks2, ks3 = 31, 11, 5
-        sigma1, sigma2, sigma3 = 7, 4, 2
-
-        ns = s.clone().view(-1, 1, hr, wr)
-        ns1 = gaussian_filter(ns, ks1, sigma1).view(n, kp1.size(0), hr, wr) - s
-        ns2 = gaussian_filter(ns, ks2, sigma2).view(n, kp1.size(0), hr, wr) - s
-        ns3 = gaussian_filter(ns, ks3, sigma3).view(n, kp1.size(0), hr, wr) - s
-        ns = ns1 + ns2 + ns3
-
-        # Apply visibility mask
-        s *= vis_mask1
-        ns *= vis_mask1
-
-        # Sample descriptors
-        kp1_desc = sample_descriptors(desc1, kp1, self.grid_size)
-
-        # Calculate distance pairs
-        s_kp1_desc = kp1_desc.permute(1, 0).unsqueeze(0).unsqueeze(3).unsqueeze(3)
-        s_desc2 = desc2.unsqueeze(2)
-        dot_desc = torch.sum(s_kp1_desc * s_desc2, dim=1)
-
-        pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
-        neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
-
-        neg_per_pos = 374.359
-        pos_lambda = neg_per_pos * 0.3
-
-        loss = pos_lambda * s * pos_dist + ns * neg_dist
-
-        norm = kp1.size(0) * neg_per_pos
-        loss = loss.sum() / norm * self.loss_lambda
-
-        return loss, kp1_desc
+        return loss
 
 
 class HardTripletLoss(nn.Module):
@@ -151,55 +111,26 @@ class HardTripletLoss(nn.Module):
 
         self.loss_lambda = loss_lambda
 
-    def forward(self, kp1, desc1, desc2, homo21, vis_mask1):
-        """
-        :param kp1: K x 4
-        :param desc1: N x C x Hr x Wr
-        :param desc2: N x C x Hr x Wr
-        :param homo21: N x 3 x 3
-        :param vis_mask1: Mask of the first image. N x 1 x H x W
-        Note: 'r' suffix means reduced in 'grid_size' times
-        """
+    def forward(self, kp1, w_kp1, kp2, kp1_desc, kp2_desc, desc2):
+        w_kp1_grid = w_kp1.float().unsqueeze(1)
+        kp2_grid = kp2.float().unsqueeze(0)
 
-        # Move keypoints coordinates to reduced spatial size
-        kp_grid = kp1[:, [3, 2]].unsqueeze(0).float()
-        kp_grid[:, 0] = kp_grid[:, 0] / self.grid_size
-        kp_grid[:, 1] = kp_grid[:, 1] / self.grid_size
+        grid_dist = torch.norm(w_kp1_grid - kp2_grid, dim=-1)
+        radius = math.sqrt(self.grid_size ** 2 / 2)
+        neighbour_mask = (grid_dist <= 2 * radius + 0.1).float()
 
-        # Warp reduced coordinate grid to desc1 viewpoint
-        w_grid = create_coordinates_grid(desc2.size()) * self.grid_size + self.grid_size // 2
-        w_grid = w_grid.type_as(desc2).to(desc2.device)
-        w_grid = warp_coordinates_grid(w_grid, homo21)
+        anchor = kp1_desc.unsqueeze(1)
+        positive = sample_descriptors(desc2, w_kp1, self.grid_size)
+        negative = kp2_desc.unsqueeze(0)
 
-        kp_grid = kp_grid.unsqueeze(2).unsqueeze(2)
-        w_grid = w_grid.unsqueeze(1)
+        # L2 distance measure
+        desc_dist = torch.norm(anchor - negative, dim=-1)
+        desc_dist = desc_dist + neighbour_mask * 5
 
-        n, _, hr, wr = desc1.size()
+        positive_dist = torch.pairwise_distance(kp1_desc, positive)
+        # Pick closest negative sample
+        negative_dist = desc_dist.min(dim=-1)[0]
 
-        # Reduce spatial dimensions of visibility mask
-        vis_mask1 = space_to_depth(vis_mask1, self.grid_size).prod(dim=1)
-        vis_mask1 = vis_mask1.reshape([n, 1, hr, wr])
+        loss = torch.clamp(positive_dist - negative_dist + self.margin, min=0).mean() * self.loss_lambda
 
-        # Mask with homography induced correspondences
-        grid_dist = torch.norm(kp_grid - w_grid, dim=-1)
-        s = (grid_dist <= self.grid_size - 0.5).float()
-        ns = 1 - s
-
-        # Apply visibility mask
-        s *= vis_mask1
-        ns *= vis_mask1
-
-        # Sample descriptors
-        kp1_desc = sample_descriptors(desc1, kp1, self.grid_size)
-
-        # Calculate distance pairs
-        s_kp1_desc = kp1_desc.permute(1, 0).unsqueeze(0).unsqueeze(3).unsqueeze(3)
-        s_desc2 = desc2.unsqueeze(2)
-        dist_desc = torch.norm(s_kp1_desc - s_desc2, dim=1)
-
-        pos_dist = (dist_desc - ns * 5).view(n, kp1.size(0), -1).max(dim=-1)[0]
-        neg_dist = (dist_desc + s * 5).view(n, kp1.size(0), -1).min(dim=-1)[0]
-
-        loss = torch.clamp(pos_dist - neg_dist + self.margin, min=0.0).mean() * self.loss_lambda
-
-        return loss, kp1_desc
+        return loss
