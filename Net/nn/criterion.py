@@ -90,7 +90,7 @@ class HingeLoss(nn.Module):
         positive_dot = (kp1_desc * positive).sum(dim=-1)
         negative_dot = desc_dot.topk(self.neg_samples, dim=-1)[0]
 
-        balance_factor = self.neg_samples / 3.0
+        balance_factor = self.neg_samples
         loss = torch.clamp(self.pos_margin - positive_dot, min=0).sum() * balance_factor + \
                torch.clamp(negative_dot - self.neg_margin, min=0).sum()
 
