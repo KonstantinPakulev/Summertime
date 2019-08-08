@@ -2,7 +2,7 @@
 
 time="$(date "+%m_%d_%H_%M_%S")"
 log_dir="$(pwd)/runs/"${time}
-checkpoint_path="../checkpoints/07_31_18_50_03/my_model_6.pth"
+checkpoint_path="../checkpoints/08_07_11_54_17/my_model_24.pth"
 
 mkdir "${log_dir}"
 

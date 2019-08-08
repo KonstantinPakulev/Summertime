@@ -16,6 +16,25 @@ class Net(nn.Module):
     def __init__(self, descriptor_size):
         super().__init__()
 
+        self.detector = NetDetector()
+        self.descriptor = NetDescriptor(descriptor_size)
+
+    def forward(self, x):
+        """
+        :param x: B x C x H x W
+        """
+
+        score, x = self.detector(x)
+        desc = self.descriptor(x)
+
+        return score, desc
+
+
+class NetDetector(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
         self.conv1 = make_sdc_ms_block(1, 16, 1)
         self.conv2 = make_sdc_ms_block(1, 16, 2)
         self.conv3 = make_sdc_ms_block(1, 16, 3)
@@ -25,8 +44,6 @@ class Net(nn.Module):
         self.conv6 = make_sdc_ms_block(64, 16, 2)
         self.conv7 = make_sdc_ms_block(64, 16, 3)
         self.conv8 = make_sdc_ms_block(64, 16, 4)
-
-        self.descriptor = make_vgg_descriptor(descriptor_size)
 
     def forward(self, x):
         """
@@ -50,11 +67,22 @@ class Net(nn.Module):
         multi_scale_scores = multi_scale_nms(x, 15)
         score = multi_scale_softmax(multi_scale_scores)
 
-        x = self.descriptor(x)
+        return score, x
 
+
+class NetDescriptor(nn.Module):
+
+    def __init__(self, descriptor_size):
+        super().__init__()
+
+        self.descriptor = make_vgg_descriptor(descriptor_size)
+
+    def forward(self, x):
+
+        x = self.descriptor(x)
         desc = F.normalize(x)
 
-        return score, desc
+        return desc
 
 
 class NetVGG(nn.Module):

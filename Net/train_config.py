@@ -17,18 +17,8 @@ cfg.LOSS = EasyDict()
 """
 Triplet loss
 """
-cfg.LOSS.DES_LAMBDA_TRI = 0.1
+cfg.LOSS.DES_LAMBDA_TRI = 1
 cfg.LOSS.MARGIN = 1
-
-"""
-Pair hinge loss
-"""
-cfg.LOSS.DES_LAMBDA_HIN = 1
-
-cfg.LOSS.POS_MARGIN = 1
-cfg.LOSS.NEG_MARGIN = 0.2
-
-cfg.LOSS.NEG_SAMPLES = 10
 
 """
 MSE loss
@@ -58,8 +48,8 @@ cfg.TRAIN = EasyDict()
 cfg.TRAIN.BATCH_SIZE = 1
 cfg.TRAIN.NUM_EPOCHS = 3000
 cfg.TRAIN.LOG_INTERVAL = 2
-cfg.TRAIN.LR = 0.001
-cfg.TRAIN.WEIGHT_DECAY = 1e-5
+cfg.TRAIN.DET_LR = 0.001
+cfg.TRAIN.DES_LR = 0.01
 
 """
 Val settings
@@ -73,8 +63,7 @@ Val show settings
 """
 cfg.VAL_SHOW = EasyDict()
 cfg.VAL_SHOW.BATCH_SIZE = 1
-# TODO. Make larger when evthg is ready
-cfg.VAL_SHOW.LOG_INTERVAL = 1
+cfg.VAL_SHOW.LOG_INTERVAL = 10
 
 """
 Dataset settings

@@ -14,7 +14,9 @@ from Net.utils.image_utils import (create_coordinates_grid,
                                    filter_border,
                                    select_keypoints)
 
+from Net.utils.common_utils import kp2coord
 from Net.utils.model_utils import sample_descriptors, space_to_depth
+from Net.utils.math_utils import calculate_similarity_matrix, calculate_similarity_vector
 
 
 class MSELoss(nn.Module):
@@ -34,6 +36,7 @@ class MSELoss(nn.Module):
 
     def forward(self, score1, score2, homo12):
         # Filter border
+        # TODO. Remove border filtering and replace it with eroding procedure.
         score2 = filter_border(score2)
 
         # Warp score2 to score1 space
@@ -57,49 +60,6 @@ class MSELoss(nn.Module):
         return loss, kp1
 
 
-class HingeLoss(nn.Module):
-
-    def __init__(self, grid_size,
-                 pos_margin, neg_margin,
-                 neg_samples,
-                 loss_lambda):
-        super().__init__()
-        self.grid_size = grid_size
-
-        self.pos_margin = pos_margin
-        self.neg_margin = neg_margin
-
-        self.neg_samples = neg_samples
-
-        self.loss_lambda = loss_lambda
-
-    def forward(self, kp1, w_kp1, kp2, kp1_desc, kp2_desc, desc2):
-        w_kp1_grid = w_kp1.float().unsqueeze(1)
-        kp2_grid = kp2.float().unsqueeze(0)
-
-        grid_dist = torch.norm(w_kp1_grid - kp2_grid, dim=-1)
-        radius = math.sqrt(self.grid_size ** 2 / 2)
-        neighbour_mask = (grid_dist <= 2 * radius + 0.1).float()
-
-        positive = sample_descriptors(desc2, w_kp1, self.grid_size)
-
-        # Cosine similarity measure
-        desc_dot = torch.mm(kp1_desc, kp2_desc.t())
-        desc_dot = desc_dot - neighbour_mask * 5
-
-        positive_dot = (kp1_desc * positive).sum(dim=-1)
-        negative_dot = desc_dot.topk(self.neg_samples, dim=-1)[0]
-
-        balance_factor = self.neg_samples
-        loss = torch.clamp(self.pos_margin - positive_dot, min=0).sum() * balance_factor + \
-               torch.clamp(negative_dot - self.neg_margin, min=0).sum()
-
-        norm = self.loss_lambda / (kp1_desc.size(0) * self.neg_samples)
-        loss = loss * norm
-
-        return loss
-
-
 class HardTripletLoss(nn.Module):
 
     def __init__(self, grid_size, margin, loss_lambda):
@@ -111,26 +71,36 @@ class HardTripletLoss(nn.Module):
 
         self.loss_lambda = loss_lambda
 
-    def forward(self, kp1, w_kp1, kp2, kp1_desc, kp2_desc, desc2):
-        w_kp1_grid = w_kp1.float().unsqueeze(1)
-        kp2_grid = kp2.float().unsqueeze(0)
+    def forward(self, kp1, w_kp1, kp1_desc, desc2):
+        # Calculate similarity measure between anchors and positives
+        w_kp1_desc = sample_descriptors(desc2, w_kp1, self.grid_size)
 
-        grid_dist = torch.norm(w_kp1_grid - kp2_grid, dim=-1)
-        radius = math.sqrt(self.grid_size ** 2 / 2)
-        neighbour_mask = (grid_dist <= 2 * radius + 0.1).float()
+        # Take positive matches
+        positive_sim = calculate_similarity_vector(kp1_desc, w_kp1_desc)
+        positive_sim = positive_sim.view(-1, 1).repeat(1, 4).view(-1)
 
-        anchor = kp1_desc.unsqueeze(1)
-        positive = sample_descriptors(desc2, w_kp1, self.grid_size)
-        negative = kp2_desc.unsqueeze(0)
+        # Create neighbour mask
+        kp_grid = kp2coord(w_kp1).unsqueeze(1)
+        coo_grid = create_coordinates_grid(desc2.size()).view(-1, 2).unsqueeze(0).to(desc2.device)
+        coo_grid = coo_grid * self.grid_size + self.grid_size // 2
 
-        # L2 distance measure
-        desc_dist = torch.norm(anchor - negative, dim=-1)
-        desc_dist = desc_dist + neighbour_mask * 5
+        grid_dist = torch.norm(kp_grid - coo_grid, dim=-1)
+        _, ids = grid_dist.topk(k=4, largest=False, dim=-1)
 
-        positive_dist = torch.pairwise_distance(kp1_desc, positive)
-        # Pick closest negative sample
-        negative_dist = desc_dist.min(dim=-1)[0]
+        r_ids = torch.arange(0, ids.size(0)).view(-1, 1).repeat(1, ids.size(1)).view(-1)
 
-        loss = torch.clamp(positive_dist - negative_dist + self.margin, min=0).mean() * self.loss_lambda
+        mask = torch.zeros_like(grid_dist)
+        mask[r_ids, ids.view(-1)] = 1.0
 
-        return loss
+        # Calculate similarity
+        desc2 = desc2.permute((0, 2, 3, 1)).view(-1, desc2.size(1))
+        desc_sim = calculate_similarity_matrix(kp1_desc, desc2)
+
+        # Apply neighbour mask and get negatives
+        desc_sim = desc_sim + mask * 5
+        # neg_sim = desc_sim.min(dim=-1)[0]
+        neg_sim = desc_sim.topk(k=4, dim=-1, largest=False)[0].view(-1)
+
+        loss = torch.clamp(positive_sim - neg_sim + self.margin, min=0).mean() * self.loss_lambda
+
+        return loss, positive_sim.mean()

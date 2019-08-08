@@ -6,6 +6,8 @@ from torchvision.utils import make_grid
 
 from Net.hpatches_dataset import (S_IMAGE1,
                                   S_IMAGE2)
+
+from Net.utils.common_utils import *
 from Net.utils.image_utils import warp_keypoints
 
 # Eval metrics names
@@ -198,35 +200,6 @@ def nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, desc1, desc2, ids, top_k
 """
 Results visualisation
 """
-
-
-def torch2cv(img):
-    """
-    :type img: 1 x C x H x W
-    """
-    img = img.permute(0, 2, 3, 1)[0].cpu().detach().numpy()
-    img = (img * 255).astype(np.uint8)
-    return img
-
-
-def cv2torch(img):
-    img = img.transpose((2, 0, 1))
-    img = torch.from_numpy(img)
-    return img
-
-
-def to_cv2_keypoint(kp):
-    """
-    :type kp: K x 4
-    """
-    kp = kp.cpu().detach().numpy()
-    kp = list(map(lambda x: cv2.KeyPoint(x[3], x[2], 0), kp))
-
-    return kp
-
-
-def to_cv2_dmatch(kp):
-    return list(map(lambda x: cv2.DMatch(x, x, x, x), np.arange(0, len(kp))))
 
 
 # TODO. Metrics and visualisation results should be for both images. Find intersection in case of visualization
