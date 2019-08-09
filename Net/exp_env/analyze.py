@@ -17,7 +17,7 @@ from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 
 from Net.exp_env.analyze_config import cfg
-from Net.nn.model import Net
+from Net.nn.model import NetSDC
 from Net.nn.criterion import HardTripletLoss
 from Net.hpatches_dataset import (
     HPatchesDataset,
@@ -79,7 +79,7 @@ def test(config, device, log_dir, checkpoint_path):
 
     writer = SummaryWriter(logdir=log_dir)
 
-    model = Net(config.MODEL.DESCRIPTOR_SIZE).to(device)
+    model = NetSDC(config.MODEL.DESCRIPTOR_SIZE).to(device)
     model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
 
     triplet_criterion = HardTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.LOSS.DES_LAMBDA_TRI)

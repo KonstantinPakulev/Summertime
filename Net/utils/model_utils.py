@@ -7,17 +7,6 @@ Building blocks for models
 """
 
 
-def make_rf_ms_block(in_channels, out_channels):
-    conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
-    conv += [nn.InstanceNorm2d(out_channels, affine=True)]
-    conv += [nn.LeakyReLU()]
-
-    score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
-    score += [nn.InstanceNorm2d(1, affine=True)]
-
-    return nn.Sequential(*conv), nn.Sequential(*score)
-
-
 def make_vgg_block(in_channels, out_channels):
     conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
     conv += [nn.BatchNorm2d(out_channels)]
@@ -26,11 +15,39 @@ def make_vgg_block(in_channels, out_channels):
     return conv
 
 
-def make_vgg_ms_block(in_channels, out_channels):
+def make_vgg_ms_block(in_channels, out_channels, factor):
     conv = make_vgg_block(in_channels, out_channels)
 
     score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
+    score += [nn.UpsamplingBilinear2d(scale_factor=factor)]
     score += [nn.BatchNorm2d(1)]
+
+    return nn.Sequential(*conv), nn.Sequential(*score)
+
+
+def make_vgg_ms_detector(in_channels, out_channels, grid_size):
+    conv = make_vgg_block(in_channels, out_channels)
+    conv += [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
+    conv += [nn.UpsamplingBilinear2d(scale_factor=grid_size)]
+    conv += [nn.BatchNorm2d(1)]
+
+    return nn.Sequential(*conv)
+
+
+def make_vgg_ms_descriptor(in_channels, out_channels, descriptor_size):
+    conv = make_vgg_block(in_channels, out_channels)
+    conv += [nn.Conv2d(out_channels, descriptor_size, kernel_size=1, padding=0)]
+
+    return nn.Sequential(*conv)
+
+
+def make_rf_ms_block(in_channels, out_channels):
+    conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
+    conv += [nn.InstanceNorm2d(out_channels, affine=True)]
+    conv += [nn.LeakyReLU()]
+
+    score = [nn.Conv2d(out_channels, 1, kernel_size=1, padding=0)]
+    score += [nn.InstanceNorm2d(1, affine=True)]
 
     return nn.Sequential(*conv), nn.Sequential(*score)
 

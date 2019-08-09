@@ -103,4 +103,4 @@ class HardTripletLoss(nn.Module):
 
         loss = torch.clamp(positive_sim - neg_sim + self.margin, min=0).mean() * self.loss_lambda
 
-        return loss, positive_sim.mean()
+        return loss

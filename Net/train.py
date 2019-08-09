@@ -18,7 +18,7 @@ from ignite.contrib.handlers.param_scheduler import LRScheduler
 from ignite.engine import Engine, Events
 from ignite.handlers import ModelCheckpoint, Timer
 
-from Net.nn.model import Net
+from Net.nn.model import NetSDC, NetVGG
 from Net.nn.criterion import MSELoss, HardTripletLoss
 from Net.hpatches_dataset import (
     HPatchesDataset,
@@ -227,7 +227,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
     Training and validation steps. 
     """
 
-    model = Net(config.MODEL.DESCRIPTOR_SIZE).to(device)
+    model = NetVGG(config.MODEL.GRID_SIZE, config.MODEL.DESCRIPTOR_SIZE).to(device)
 
     mse_criterion = MSELoss(config.LOSS.NMS_THRESH, config.LOSS.NMS_K_SIZE,
                             config.LOSS.TOP_K,
@@ -235,11 +235,13 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
     triplet_criterion = HardTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.LOSS.DES_LAMBDA_TRI)
 
-    det_optimizer = Adam(model.detector.parameters(), lr=config.TRAIN.DET_LR)
-    des_optimizer = SGD(model.descriptor.parameters(), lr=config.TRAIN.DES_LR, momentum=0.9, dampening=0.9)
+    optimizer = Adam(model.parameters(), lr=config.TRAIN.DET_LR)
 
-    det_scheduler = MultiStepLR(det_optimizer, [5000], 0.1)
-    des_scheduler = MultiStepLR(des_optimizer, [10000], 0.1)
+    # det_optimizer = Adam(model.detector.parameters(), lr=config.TRAIN.DET_LR)
+    # des_optimizer = SGD(model.descriptor.parameters(), lr=config.TRAIN.DES_LR, momentum=0.9, dampening=0.9)
+
+    # det_scheduler = MultiStepLR(det_optimizer, [5000], 0.1)
+    # des_scheduler = MultiStepLR(des_optimizer, [10000], 0.1)
 
     def iteration(engine, batch):
         image1, image2, homo12, homo21 = (
@@ -261,10 +263,10 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         w_kp1 = warp_keypoints(kp1, homo12)
         w_kp2 = warp_keypoints(kp2, homo21)
 
-        des_loss1, pair_loss1 = triplet_criterion(kp1, w_kp1, kp1_desc, desc2)
-        des_loss2, pair_loss2 = triplet_criterion(kp2, w_kp2, kp2_desc, desc1)
+        des_loss1 = triplet_criterion(kp1, w_kp1, kp1_desc, desc2)
+        des_loss2 = triplet_criterion(kp2, w_kp2, kp2_desc, desc1)
 
-        det_loss = (det_loss1 + pair_loss1 + det_loss2 + pair_loss2) / 2
+        det_loss = (det_loss1 + det_loss2) / 2
         des_loss = (des_loss1 + des_loss2) / 2
 
         loss = det_loss + des_loss
@@ -290,13 +292,13 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         with torch.autograd.set_detect_anomaly(True):
             endpoint = iteration(engine, batch)
 
-            det_optimizer.zero_grad()
-            endpoint[DET_LOSS].backward(retain_graph=True)
-            det_optimizer.step()
+            optimizer.zero_grad()
+            endpoint[LOSS].backward()
+            optimizer.step()
 
-            des_optimizer.zero_grad()
-            endpoint[DES_LOSS].backward()
-            des_optimizer.step()
+            # des_optimizer.zero_grad()
+            # endpoint[DES_LOSS].backward()
+            # des_optimizer.step()
 
         return prepare_output_dict(batch, endpoint, device, config)
 
@@ -326,10 +328,10 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
     checkpoint_saver = ModelCheckpoint(checkpoint_dir, "my", save_interval=1, n_saved=3)
     trainer.add_event_handler(Events.EPOCH_COMPLETED, checkpoint_saver, {'model': model})
 
-    det_scheduler_handler = LRScheduler(det_scheduler)
-    des_scheduler_handler = LRScheduler(des_scheduler)
-    trainer.add_event_handler(Events.ITERATION_COMPLETED, det_scheduler_handler)
-    trainer.add_event_handler(Events.ITERATION_COMPLETED, des_scheduler_handler)
+    # det_scheduler_handler = LRScheduler(det_scheduler)
+    # des_scheduler_handler = LRScheduler(des_scheduler)
+    # trainer.add_event_handler(Events.ITERATION_COMPLETED, det_scheduler_handler)
+    # trainer.add_event_handler(Events.ITERATION_COMPLETED, des_scheduler_handler)
 
     """
     Visualisation utils, logging and metrics
@@ -368,8 +370,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
                 Epoch {engine.state.epoch} completed.
                 \tFinished in {datetime.timedelta(seconds=epoch_timer.value())}.
                 \tAverage time per batch is {batch_timer.value():.2f} seconds
-                \tDetector learning rate is: {det_optimizer.param_groups[0]["lr"]}
-                \tDescriptor learning rate is: {des_optimizer.param_groups[0]["lr"]}
+                \tDetector learning rate is: {optimizer.param_groups[0]["lr"]}
                 """
         writer.add_text("Log", text, engine.state.epoch)
 
