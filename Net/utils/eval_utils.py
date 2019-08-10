@@ -7,7 +7,9 @@ from torchvision.utils import make_grid
 from Net.hpatches_dataset import (S_IMAGE1,
                                   S_IMAGE2)
 
-from Net.utils.common_utils import *
+
+from Net.utils.common_utils import torch2cv, to_cv2_keypoint, cv2torch, to_cv2_dmatch
+from Net.utils.math_utils import calculate_distance_matrix, calculate_similarity_matrix
 from Net.utils.image_utils import warp_keypoints
 
 # Eval metrics names
@@ -68,40 +70,23 @@ Evaluation functions
 """
 
 
-def determine_matched_keypoints(kp1, w_kp2):
-    """
-    :param kp1: K x 4
-    :param w_kp2: K x 4
-    """
-    s_kp1 = kp1[:, 2:].float()  # K x 2
-    s_kp2 = w_kp2[:, 2:].float()  # K x 2
-
-    s_kp1 = s_kp1.view(s_kp1.size(0), 1, s_kp1.size(1))
-    s_kp2 = s_kp2.view(1, s_kp2.size(0), s_kp2.size(1))
-
-    dist_kp = torch.norm(s_kp1 - s_kp2, p=2, dim=-1)
-
-    return dist_kp.min(dim=-1)
-
-
 def repeatability_score(kp1, w_kp2, kp2, top_k, kp_match_thresh):
     """
-    :param kp1: K x 4
-    :param w_kp2: K x 4
-    :param kp2: K x 4
-    :param homo21: N x 3 x 3
+    :param kp1: B x N x 2
+    :param w_kp2: B x N x 2
+    :param kp2: B x N x 2
     :param top_k: int
     :param kp_match_thresh: float
     """
-    _, ids1 = determine_matched_keypoints(kp1, w_kp2)
+    _, ids = calculate_distance_matrix(kp1, w_kp2).min(dim=-1)
 
-    return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids1, top_k, kp_match_thresh)
+    return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
 
 
 def match_score(kp1, w_kp2, kp2, desc1, desc2, top_k, kp_match_thresh, des_match_thresh, des_match_ratio):
-    _, ids = determine_nearest_neighbours(desc1, desc2)
+    _, ids = calculate_distance_matrix(desc1, desc2).topk(k=2, dim=-1, largest=False)
 
-    nn_match_score, _, _ = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, 0], top_k, kp_match_thresh)
+    nn_match_score, _, _ = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, :, 0], top_k, kp_match_thresh)
     nn_thresh_match_score, _, _ = nearest_neighbor_threshold_match_score(kp1, w_kp2, kp2, desc1, desc2, ids[:, 0],
                                                                          top_k, kp_match_thresh, des_match_thresh)
     nn_ratio_match_score, _, _ = nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, desc1, desc2, ids,
@@ -112,37 +97,36 @@ def match_score(kp1, w_kp2, kp2, desc1, desc2, top_k, kp_match_thresh, des_match
     return [total_match_score, nn_match_score, nn_thresh_match_score, nn_ratio_match_score]
 
 
-def determine_nearest_neighbours(desc1, desc2):
-    """
-    :param desc1: S x C
-    :param desc2: S x C
-    :return:
-    """
-    # A pair of normalized descriptors will have the maximum value of scalar product if they are the closets
-    des_dot = torch.mm(desc1, desc2.t())
-
-    return des_dot.topk(2, dim=-1)
-
-
 def nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh):
     """
-    :param kp1: S x 4; Keypoints from score1
-    :param w_kp2: S x 4; Keypoints from score2 warped to score1
-    :param kp2: Keypoints from score2
-    :param ids: S x 1; Ids of closest descriptor of kp2 relative to kp1
+    :param kp1: B x N x 2; Keypoints from score1
+    :param w_kp2: B x N x 2; Keypoints from score2 warped to score1
+    :param kp2: B x N x 2; Keypoints from score2
+    :param ids: B x N; Ids of closest keypoints from kp2 to kp1 by some measure
     :param top_k: int
     :param kp_match_thresh: int
+    :return float, B x N1 x 2, B x N2 x 2
     """
-    w_kp2 = w_kp2.index_select(dim=0, index=ids)
-    kp2 = kp2.index_select(dim=0, index=ids)
+    b, n, _ = kp1.size()
 
-    dist = torch.pairwise_distance(kp1[:, 2:].float(), w_kp2[:, 2:].float())
-    correct_matches = dist.le(kp_match_thresh)
+    g_ids = ids.unsqueeze(dim=-1).repeat((1, 1, 2))
+    w_kp2 = w_kp2.gather(dim=1, index=g_ids)
+    kp2 = kp2.gather(dim=1, index=g_ids)
 
-    score = correct_matches.sum().float() / top_k
+    f_kp1 = kp1.float().view(b * n, 2)
+    f_kp2 = w_kp2.float().view(b * n, 2)
 
-    kp1 = kp1[correct_matches, :]
-    kp2 = kp2[correct_matches, :]
+    kp1_mask = f_kp1.sum(dim=-1).ne(0.0)
+    kp2_mask = f_kp2.sum(dim=-1).ne(0.0)
+
+    dist = torch.pairwise_distance(f_kp1, f_kp2)
+    correct_matches = dist.le(kp_match_thresh) * kp1_mask * kp2_mask
+    correct_matches = correct_matches.view(b, n, 1).long()
+
+    score = (correct_matches.sum(dim=1).float() / top_k).mean()
+
+    kp1 = kp1 * correct_matches
+    kp2 = kp2 * correct_matches
 
     return score, kp1, kp2
 
@@ -239,8 +223,8 @@ def plot_keypoints(writer, epoch, outputs):
         """
         Descriptors matched keypoints 
         """
-        _, ids = determine_nearest_neighbours(desc1, desc2)
-        _, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, 0], top_k, kp_match_thresh)
+        _, ids = calculate_distance_matrix(desc1, desc2).min(dim=-1)
+        _, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
 
         dm_kp1 = to_cv2_keypoint(dm_kp1)
         dm_kp2 = to_cv2_keypoint(dm_kp2)

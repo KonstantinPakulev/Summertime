@@ -85,6 +85,7 @@ class NetVGG(nn.Module):
         score = multi_scale_softmax(multi_scale_scores)
 
         desc = self.descriptor(x)
+        desc = F.normalize(desc)
 
         return score, desc
 

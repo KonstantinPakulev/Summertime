@@ -4,6 +4,8 @@ from skimage import transform
 import torch
 import torch.nn.functional as F
 
+from Net.utils.common_utils import flat2grid
+
 """
 Image manipulations
 """
@@ -114,11 +116,11 @@ def crop_homography(homography, rect1=None, rect2=None):
     return homography
 
 
-def create_coordinates_grid(target_image_size):
+def create_coordinates_grid(out):
     """
-    :param target_image_size: (n, c, h, w)
+    :param out: B x C x H x W
     """
-    n, _, h, w = target_image_size
+    n, _, h, w = out.size()
 
     gy, gx = torch.meshgrid([torch.arange(h), torch.arange(w)])
     gx = gx.float().unsqueeze(-1)
@@ -161,49 +163,46 @@ def warp_coordinates_grid(grid, homography):
 
 def warp_keypoints(keypoints, homography):
     """
-    :param keypoints: K x 4
-    :param homography: N x 3 x 3
+    :param keypoints: B x N x 2
+    :param homography: B x 3 x 3
+    :return B x N x 2
     """
+    b, n, _ = keypoints.size()
 
-    # We need to warp only spatial coordinates.
     #  Because warping operates on x,y coordinates we also need to swap h and w
-    s_keypoints = keypoints[:, [3, 2]].float()
-    ones = torch.ones((keypoints.size(0), 1)).to(keypoints.device)
-    s_keypoints = torch.cat((s_keypoints, ones), dim=-1)  # N x 3, warp only spatial coordinates
-    s_keypoints = s_keypoints.permute(1, 0)  # 3 x N
+    h_keypoints = keypoints[:, :, [1, 0]].float()
+    h_keypoints = torch.cat((h_keypoints, torch.ones((b, n, 1)).to(keypoints.device)), dim=-1)
+    h_keypoints = h_keypoints.view((b, -1, 3)).permute(0, 2, 1)  # B x 3 x N
 
     # Warp keypoints
-    ws_keypoints = torch.matmul(homography, s_keypoints).squeeze(0)
-    ws_keypoints = ws_keypoints.permute(1, 0)  # N x 3
+    w_keypoints = torch.bmm(homography, h_keypoints)
+    w_keypoints = w_keypoints.permute(0, 2, 1)  # B x N x 3
 
     # Convert coordinates from homogeneous to cartesian
-    ws_keypoints = ws_keypoints / (ws_keypoints[:, 2].unsqueeze(dim=-1) + 1e-8)
+    w_keypoints = w_keypoints / (w_keypoints[:, :, 2].unsqueeze(dim=-1) + 1e-8)
     # Restore original ordering
-    ws_keypoints = ws_keypoints[:, [1, 0]]
-
-    w_keypoints = keypoints.clone()
-    w_keypoints[:, 2:] = ws_keypoints.round().long()
+    w_keypoints = w_keypoints[:, :, [1, 0]].view((b, n, 2))
 
     return w_keypoints
 
 
-def warp_image(target_image, source_image, homo_t2s):
+def warp_image(out_image, in_image, homo):
     """
-    :param target_image: N x C x oH x oW
-    :param source_image: N x C x iH x iW
-    :param homo_t2s: N x 3 x 3; A homography to warp coordinates from target to source
-    :return w_image: N x C x H x W
+    :param out_image: B x C x oH x oW
+    :param in_image: B x C x iH x iW
+    :param homo: N x 3 x 3; A homography to warp coordinates from out to in
+    :return w_image: B x C x H x W
     """
-    _, _, h, w = target_image.size()
+    _, _, h, w = out_image.size()
 
-    grid = create_coordinates_grid(target_image.size()).to(target_image.device)
-    w_grid = warp_coordinates_grid(grid, homo_t2s)
+    grid = create_coordinates_grid(out_image).to(out_image.device)
+    w_grid = warp_coordinates_grid(grid, homo)
 
     # Normalize coordinates in range [-1, 1]
     w_grid[:, :, :, 0] = w_grid[:, :, :, 0] / (w - 1) * 2 - 1
     w_grid[:, :, :, 1] = w_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
-    w_image = F.grid_sample(source_image, w_grid)  # N x C x H x W
+    w_image = F.grid_sample(in_image, w_grid)  # N x C x H x W
 
     return w_image
 
@@ -286,9 +285,10 @@ Score processing functions
 
 def nms(score, thresh: float, k_size):
     """
-    :param score: B x 1 x H x W
+    :param score: B x C x H x W
     :param thresh: float
     :param k_size: int
+    :return B x C x H x w
     """
     _, _, h, w = score.size()
 
@@ -298,12 +298,12 @@ def nms(score, thresh: float, k_size):
     ps2 = pad_size * 2
     pad = [ps2, ps2, ps2, ps2, 0, 0]
 
-    pad_det = F.pad(score, pad)
+    padded_score = F.pad(score, pad)
 
-    slice_map = torch.tensor([], dtype=pad_det.dtype, device=pad_det.device)
+    slice_map = torch.tensor([], dtype=padded_score.dtype, device=padded_score.device)
     for i in range(k_size):
         for j in range(k_size):
-            _slice = pad_det[:, :, i: h + ps2 + i, j: w + ps2 + j]
+            _slice = padded_score[:, :, i: h + ps2 + i, j: w + ps2 + j]
             slice_map = torch.cat((slice_map, _slice), 1)
 
     max_slice, _ = slice_map.max(dim=1, keepdim=True)
@@ -319,29 +319,24 @@ def nms(score, thresh: float, k_size):
 
 def select_keypoints(score, thresh, k_size, top_k):
     """
-    :param score: N x 1 x H x W
+    :param score: B x 1 x H x W
     :param thresh: float
     :param k_size: int
     :param top_k: int
+    :return B x 1 x H x W, B x N x 2
     """
     n, c, h, w = score.size()
-    flat = h * w
-
-    # Filter borders
-    score = filter_border(score)
 
     # Apply nms
     score = nms(score, thresh, k_size)
 
-    # Extract maximum activation indices
-    score = score.view(n, c, flat)
-    _, top_k_indices = torch.topk(score, top_k)
+    # Extract maximum activation indices and convert them to keypoints
+    score = score.view(n, c, -1)
+    _, flat_ids = torch.topk(score, top_k)
+    keypoints = flat2grid(flat_ids, w).squeeze(1)
 
     # Select maximum activations
-    top_score = torch.zeros_like(score).to(score.device)
-    top_score[:, :, top_k_indices] = score[:, :, top_k_indices]
+    keypoints_score = torch.zeros_like(score).to(score.device)
+    keypoints_score = keypoints_score.scatter(dim=-1, index=flat_ids, value=1).view(n, c, h, w)
 
-    top_score = top_score.view(n, c, h, w)
-    keypoints = top_score.nonzero()
-
-    return top_score, keypoints
+    return keypoints_score, keypoints

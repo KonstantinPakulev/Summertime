@@ -19,5 +19,3 @@ rm -f "$stdout"
 rm -f "$stderr"
 
 bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python /Vol0/user/k.pakulev/Summertime/legacy/RF_Net/train.py --save="$save" --det-step=1 --des-step=2 --use-pl="$use_pl"
-
-# :mode=exclusive_process

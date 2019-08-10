@@ -13,18 +13,23 @@ def print_dict(d, indent=0):
             print("\t" * indent + f"{key:>18} : {value}")
 
 
-def flat2grid(idx, w):
-    o_h = idx // w
-    o_w = idx - o_h * w
+def flat2grid(ids, w):
+    """
+    :param ids: B x C x N tensor of indices taken from flattened tensor of shape B x C x H x W
+    :param w: Last dimension (W) of tensor from which indices were taken
+    :return: B x C x N x 2 tensor of coordinates in input tensor B x C x H x W
+    """
+    o_h = ids // w
+    o_w = ids - o_h * w
 
-    o_h = o_h.view(-1).unsqueeze(-1)
-    o_w = o_w.view(-1).unsqueeze(-1)
+    o_h = o_h.unsqueeze(-1)
+    o_w = o_w.unsqueeze(-1)
 
     return torch.cat((o_h, o_w), dim=-1)
 
 
-def kp2coord(kp):
-    return kp[:, [3, 2]].float()
+# def kp2coord(kp):
+#     return kp[:, [3, 2]].float()
 
 
 def torch2cv(img):

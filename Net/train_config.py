@@ -17,7 +17,7 @@ cfg.LOSS = EasyDict()
 """
 Triplet loss
 """
-cfg.LOSS.DES_LAMBDA_TRI = 1
+cfg.LOSS.DES_LAMBDA = 1
 cfg.LOSS.MARGIN = 1
 
 """
@@ -48,8 +48,7 @@ cfg.TRAIN = EasyDict()
 cfg.TRAIN.BATCH_SIZE = 1
 cfg.TRAIN.NUM_EPOCHS = 3000
 cfg.TRAIN.LOG_INTERVAL = 2
-cfg.TRAIN.DET_LR = 0.001
-cfg.TRAIN.DES_LR = 0.01
+cfg.TRAIN.LR = 0.001
 
 """
 Val settings
@@ -78,4 +77,4 @@ cfg.DATASET.view.STD = 0.25000138349993173
 
 cfg.DATASET.view.train_csv = "train.csv"
 cfg.DATASET.view.val_csv = "val.csv"
-cfg.DATASET.view.val_show_csv = "val_show.csv"
+cfg.DATASET.view.show_csv = "show.csv"

@@ -132,14 +132,15 @@ def multi_scale_softmax(multi_scale_scores, strength=100.0):
 
 def sample_descriptors(desc, kp, grid_size):
     """
-    :param desc: N x C x H x W
-    :param kp: N x 4
+    :param desc: B x C x H x W
+    :param kp: B x N x 2
     :param grid_size: int
+    :return B x N x C
     """
     _, _, h, w = desc.size()
 
-    kp_grid = kp[:, [3, 2]].unsqueeze(0).unsqueeze(0).float() / grid_size
-    kp_grid[:, :, :, 0] = kp_grid[:, :, :, 0] / (w - 1) * 2 - 1
-    kp_grid[:, :, :, 1] = kp_grid[:, :, :, 1] / (h - 1) * 2 - 1
+    kp_grid = kp[:, :, [1, 0]].float().unsqueeze(1) / grid_size
+    kp_grid[:, :, 0] = kp_grid[:, :, 0] / (w - 1) * 2 - 1
+    kp_grid[:, :, 1] = kp_grid[:, :, 1] / (h - 1) * 2 - 1
 
-    return F.grid_sample(desc, kp_grid).squeeze().t()
+    return F.grid_sample(desc, kp_grid).squeeze(2).permute(0, 2, 1)

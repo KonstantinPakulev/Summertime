@@ -17,8 +17,18 @@ cfg.LOSS = EasyDict()
 """
 Triplet loss
 """
-cfg.LOSS.DES_LAMBDA_TRI = 1
+cfg.LOSS.DES_LAMBDA = 0.1
 cfg.LOSS.MARGIN = 1
+
+"""
+Pair hinge loss
+"""
+cfg.LOSS.DES_LAMBDA_HIN = 1
+
+cfg.LOSS.POS_MARGIN = 1
+cfg.LOSS.NEG_MARGIN = 0.2
+
+cfg.LOSS.NEG_SAMPLES = 10
 
 """
 MSE loss
@@ -32,7 +42,6 @@ cfg.LOSS.TOP_K = 512
 
 cfg.LOSS.GAUSS_K_SIZE = 15
 cfg.LOSS.GAUSS_SIGMA = 0.5
-
 
 """
 Metric settings
@@ -48,9 +57,9 @@ Train settings
 cfg.TRAIN = EasyDict()
 cfg.TRAIN.BATCH_SIZE = 1
 cfg.TRAIN.NUM_EPOCHS = 3000
-cfg.TRAIN.LOG_INTERVAL = 2
-cfg.TRAIN.DET_LR = 0.001
-cfg.TRAIN.DES_LR = 0.01
+cfg.TRAIN.LOG_INTERVAL = 1
+cfg.TRAIN.LR = 0.001
+cfg.TRAIN.WEIGHT_DECAY = 1e-5
 
 """
 Val settings
@@ -79,4 +88,4 @@ cfg.DATASET.view.STD = 0.25000138349993173
 
 cfg.DATASET.view.train_csv = "analyze.csv"
 cfg.DATASET.view.val_csv = "analyze.csv"
-cfg.DATASET.view.val_show_csv = "analyze.csv"
+cfg.DATASET.view.show_csv = "analyze.csv"

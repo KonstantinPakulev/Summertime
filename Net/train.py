@@ -94,7 +94,7 @@ def h_patches_dataset(mode, config):
         transform += [Rescale((240, 320))]
         include_originals = False
     else:
-        csv_file = config.DATASET.view.val_show_csv
+        csv_file = config.DATASET.view.show_csv
         transform += [Rescale((320, 640))]
         include_originals = True
 
@@ -219,7 +219,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
                             shuffle=True,
                             num_workers=num_workers)
 
-    val_show_loader = DataLoader(h_patches_dataset(VALIDATE_SHOW, config),
+    show_loader = DataLoader(h_patches_dataset(VALIDATE_SHOW, config),
                                  batch_size=config.VAL_SHOW.BATCH_SIZE)
 
     """
@@ -233,15 +233,9 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
                             config.LOSS.TOP_K,
                             config.LOSS.GAUSS_K_SIZE, config.LOSS.GAUSS_SIGMA, config.LOSS.DET_LAMBDA)
 
-    triplet_criterion = HardTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.LOSS.DES_LAMBDA_TRI)
+    triplet_criterion = HardTripletLoss(config.MODEL.GRID_SIZE, config.LOSS.MARGIN, config.LOSS.DES_LAMBDA)
 
-    optimizer = Adam(model.parameters(), lr=config.TRAIN.DET_LR)
-
-    # det_optimizer = Adam(model.detector.parameters(), lr=config.TRAIN.DET_LR)
-    # des_optimizer = SGD(model.descriptor.parameters(), lr=config.TRAIN.DES_LR, momentum=0.9, dampening=0.9)
-
-    # det_scheduler = MultiStepLR(det_optimizer, [5000], 0.1)
-    # des_scheduler = MultiStepLR(des_optimizer, [10000], 0.1)
+    optimizer = Adam(model.parameters(), lr=config.TRAIN.LR)
 
     def iteration(engine, batch):
         image1, image2, homo12, homo21 = (
@@ -263,8 +257,8 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         w_kp1 = warp_keypoints(kp1, homo12)
         w_kp2 = warp_keypoints(kp2, homo21)
 
-        des_loss1 = triplet_criterion(kp1, w_kp1, kp1_desc, desc2)
-        des_loss2 = triplet_criterion(kp2, w_kp2, kp2_desc, desc1)
+        des_loss1 = triplet_criterion(w_kp1, kp1_desc, desc2)
+        des_loss2 = triplet_criterion(w_kp2, kp2_desc, desc1)
 
         det_loss = (det_loss1 + det_loss2) / 2
         des_loss = (des_loss1 + des_loss2) / 2
@@ -296,10 +290,6 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
             endpoint[LOSS].backward()
             optimizer.step()
 
-            # des_optimizer.zero_grad()
-            # endpoint[DES_LOSS].backward()
-            # des_optimizer.step()
-
         return prepare_output_dict(batch, endpoint, device, config)
 
     trainer = Engine(train_iteration)
@@ -314,7 +304,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
     validator = Engine(validation_iteration)
 
-    def validation_show_iteration(engine, batch):
+    def show_iteration(engine, batch):
         model.eval()
 
         with torch.no_grad():
@@ -322,16 +312,11 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
         return endpoint
 
-    validator_show = Engine(validation_show_iteration)
+    show = Engine(show_iteration)
 
     # TODO. Save the best model by providing score function and include it in files name. LATER
     checkpoint_saver = ModelCheckpoint(checkpoint_dir, "my", save_interval=1, n_saved=3)
     trainer.add_event_handler(Events.EPOCH_COMPLETED, checkpoint_saver, {'model': model})
-
-    # det_scheduler_handler = LRScheduler(det_scheduler)
-    # des_scheduler_handler = LRScheduler(des_scheduler)
-    # trainer.add_event_handler(Events.ITERATION_COMPLETED, det_scheduler_handler)
-    # trainer.add_event_handler(Events.ITERATION_COMPLETED, des_scheduler_handler)
 
     """
     Visualisation utils, logging and metrics
@@ -341,7 +326,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
 
     attach_metrics(trainer, config)
     attach_metrics(validator, config)
-    CollectMetric(l_collect_show).attach(validator_show, SHOW)
+    CollectMetric(l_collect_show).attach(show, SHOW)
 
     """
     Registering callbacks for sending summary to tensorboard
@@ -361,8 +346,8 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
     @trainer.on(Events.EPOCH_COMPLETED)
     def on_epoch_completed(engine):
         if engine.state.epoch % config.VAL_SHOW.LOG_INTERVAL == 0:
-            validator_show.run(val_show_loader)
-            plot_keypoints(writer, engine.state.epoch, validator_show.state.metrics[SHOW])
+            show.run(show_loader)
+            plot_keypoints(writer, engine.state.epoch, show.state.metrics[SHOW])
 
         # TODO. Fancy printing of all other metrics later. REALLY LATER. ALMOST LAST.
         # validator.run(val_loader)
