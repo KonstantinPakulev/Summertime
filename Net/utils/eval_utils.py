@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from random import randint
 
 import torch
 from torchvision.utils import make_grid
@@ -7,9 +8,8 @@ from torchvision.utils import make_grid
 from Net.hpatches_dataset import (S_IMAGE1,
                                   S_IMAGE2)
 
-
 from Net.utils.common_utils import torch2cv, to_cv2_keypoint, cv2torch, to_cv2_dmatch
-from Net.utils.math_utils import calculate_distance_matrix, calculate_similarity_matrix
+from Net.utils.math_utils import calculate_distance_matrix, calculate_inv_similarity_matrix, calculate_inv_similarity_vector
 from Net.utils.image_utils import warp_keypoints
 
 # Eval metrics names
@@ -33,8 +33,8 @@ KP1 = 'kp1'
 KP2 = 'kp2'
 W_KP1 = 'w_kp1'
 W_KP2 = 'w_kp2'
-DESC1 = 'desc1'
-DESC2 = 'desc2'
+KP1_DESC = 'desc1'
+KP2_DESC = 'desc2'
 
 """
 Mappings to process endpoint and calculate metrics
@@ -58,11 +58,13 @@ def l_rep_score(x):
 
 
 def l_match_score(x):
-    return match_score(x[KP1], x[W_KP2], x[KP2], x[DESC1], x[DESC2], x[TOP_K], x[KP_MT], x[DS_MT], x[DS_MR])
+    return match_score(x[KP1], x[W_KP2], x[KP2], x[KP1_DESC], x[KP2_DESC], x[TOP_K], x[KP_MT], x[DS_MT], x[DS_MR])
 
 
 def l_collect_show(x):
-    return x[S_IMAGE1], x[S_IMAGE2], x[KP1], x[W_KP2], x[KP2], x[DESC1], x[DESC2], x[TOP_K], x[KP_MT]
+    batch_id = randint(0, x[KP1].size(0) - 1)
+    return x[S_IMAGE1][batch_id], x[S_IMAGE2][batch_id], x[KP1][batch_id], x[W_KP2][batch_id], x[KP2][batch_id], \
+           x[KP1_DESC][batch_id], x[KP2_DESC][batch_id], x[TOP_K], x[KP_MT]
 
 
 """
@@ -83,13 +85,26 @@ def repeatability_score(kp1, w_kp2, kp2, top_k, kp_match_thresh):
     return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
 
 
-def match_score(kp1, w_kp2, kp2, desc1, desc2, top_k, kp_match_thresh, des_match_thresh, des_match_ratio):
-    _, ids = calculate_distance_matrix(desc1, desc2).topk(k=2, dim=-1, largest=False)
+def match_score(kp1, w_kp2, kp2, kp1_desc, kp2_desc, top_k, kp_match_thresh, des_match_thresh, des_match_ratio):
+    """
+    :param kp1: B x N x 2; Keypoints from score1
+    :param w_kp2: B x N x 2; Keypoints from score2 warped to score1
+    :param kp2: B x N x 2; Keypoints from score2
+    :param kp1_desc: B x N x C descriptors of kp1
+    :param kp2_desc: B x N x C descriptors of kp2
+    :param top_k: int
+    :param kp_match_thresh: float
+    :param des_match_thresh: float
+    :param des_match_ratio: float
+    """
+    _, ids = calculate_inv_similarity_matrix(kp1_desc, kp2_desc).topk(k=2, dim=-1, largest=False)
 
-    nn_match_score, _, _ = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, :, 0], top_k, kp_match_thresh)
-    nn_thresh_match_score, _, _ = nearest_neighbor_threshold_match_score(kp1, w_kp2, kp2, desc1, desc2, ids[:, 0],
+    nn_match_score, _, _ = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, :, 0],
+                                                        top_k, kp_match_thresh)
+    nn_thresh_match_score, _, _ = nearest_neighbor_threshold_match_score(kp1, w_kp2, kp2, kp1_desc, kp2_desc,
+                                                                         ids[:, :, 0],
                                                                          top_k, kp_match_thresh, des_match_thresh)
-    nn_ratio_match_score, _, _ = nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, desc1, desc2, ids,
+    nn_ratio_match_score, _, _ = nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, kp1_desc, kp2_desc, ids,
                                                                     top_k, kp_match_thresh, des_match_ratio)
 
     total_match_score = (nn_match_score + nn_thresh_match_score + nn_ratio_match_score) / 3
@@ -131,54 +146,65 @@ def nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh):
     return score, kp1, kp2
 
 
-def nearest_neighbor_threshold_match_score(kp1, w_kp2, kp2, desc1, desc2, ids, top_k, kp_match_thresh,
+def nearest_neighbor_threshold_match_score(kp1, w_kp2, kp2, kp1_desc, kp2_desc, ids, top_k, kp_match_thresh,
                                            des_match_thresh):
     """
-    :param kp1: S x 4; Keypoints from score1
-    :param w_kp2: S x 4; Keypoints from score2 warped to score1
-    :param kp2: Keypoints from score2
-    :param ids: S x 1; Ids of closest descriptor of kp2 relative to kp1
-    :param desc1: C x S
-    :param desc2: C x S
+    :param kp1: B x N x 2; Keypoints from score1
+    :param w_kp2: B x N x 2; Keypoints from score2 warped to score1
+    :param kp2: B x N x 2; Keypoints from score2
+    :param kp1_desc: B x N x C descriptors of kp1
+    :param kp2_desc: B x N x C descriptors of kp2
+    :param ids: B x N; Ids of closest keypoints from kp2 to kp1 by some measure
     :param top_k: int
     :param kp_match_thresh: float
     :param des_match_thresh: float
     """
-    desc2 = desc2.index_select(dim=0, index=ids)
+    b, n, c = kp2_desc.size()
 
-    des_dist = torch.pairwise_distance(desc1, desc2)
-    thresh_mask = des_dist.le(des_match_thresh)
+    g_ids = ids.unsqueeze(dim=-1).repeat((1, 1, c))
+    kp2_desc = kp2_desc.gather(dim=1, index=g_ids)
 
-    kp1 = kp1[thresh_mask, :]
-    ids = ids[thresh_mask]
+    f_kp1_desc = kp1_desc.contiguous().view(b * n, c)
+    f_kp2_desc = kp2_desc.contiguous().view(b * n, c)
+
+    des_dist = torch.pairwise_distance(f_kp1_desc, f_kp2_desc)
+    thresh_mask = des_dist.le(des_match_thresh).unsqueeze(-1).long().view(b, n, 1)  # B x N x 1
+
+    kp1 = kp1 * thresh_mask
 
     return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
 
 
-def nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, desc1, desc2, ids, top_k, kp_match_thresh, des_match_ratio):
+def nearest_neighbor_ratio_match_score(kp1, w_kp2, kp2, kp1_desc, kp2_desc, ids, top_k, kp_match_thresh,
+                                       des_match_ratio):
     """
-    :param kp1: S x 4; Keypoints from score1
-    :param w_kp2: S x 4; Keypoints from score2 warped to score1
-    :param kp2: Keypoints from score2
-    :param ids: S x 1; Ids of closest descriptor of kp2 relative to kp1
-    :param desc1: C x S
-    :param desc2: C x S
+     :param kp1: B x N x 2; Keypoints from score1
+    :param w_kp2: B x N x 2; Keypoints from score2 warped to score1
+    :param kp2: B x N x 2; Keypoints from score2
+    :param kp1_desc: B x N x C descriptors of kp1
+    :param kp2_desc: B x N x C descriptors of kp2
+    :param ids: B x N; Ids of closest keypoints from kp2 to kp1 by some measure
     :param top_k: int
     :param kp_match_thresh: float
     :param des_match_ratio: float
     """
-    desc2_b = desc2.index_select(dim=0, index=ids[:, 0])
-    desc2_c = desc2.index_select(dim=0, index=ids[:, 1])
+    b, n, c = kp2_desc.size()
 
-    des_dist1 = torch.pairwise_distance(desc1, desc2_b)
-    des_dist2 = torch.pairwise_distance(desc1, desc2_c)
+    g_ids_b = ids[:, :, 0].unsqueeze(dim=-1).repeat((1, 1, c))
+    g_ids_c = ids[:, :, 1].unsqueeze(dim=-1).repeat((1, 1, c))
+
+    f_kp1_desc = kp1_desc.contiguous().view(b * n, c)
+    desc2_b = kp2_desc.gather(dim=1, index=g_ids_b).view(b * n, c)
+    desc2_c = kp2_desc.gather(dim=1, index=g_ids_c).view(b * n, c)
+
+    des_dist1 = torch.pairwise_distance(f_kp1_desc, desc2_b)
+    des_dist2 = torch.pairwise_distance(f_kp1_desc, desc2_c)
     dist_ratio = des_dist1 / des_dist2
-    thresh_mask = dist_ratio.le(des_match_ratio)
+    thresh_mask = dist_ratio.le(des_match_ratio).unsqueeze(-1).long().view(b, n, 1)  # B x N x 1
 
-    kp1 = kp1[thresh_mask, :]
-    ids = ids[thresh_mask, 0]
+    kp1 = kp1 * thresh_mask
 
-    return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
+    return nearest_neighbor_match_score(kp1, w_kp2, kp2, ids[:, :, 0], top_k, kp_match_thresh)
 
 
 """
@@ -186,14 +212,13 @@ Results visualisation
 """
 
 
-# TODO. Metrics and visualisation results should be for both images. Find intersection in case of visualization
 def plot_keypoints(writer, epoch, outputs):
     """
     :param writer: SummaryWriter
     :param epoch: Current train epoch
     :param outputs: list of tuples with all necessary info
     """
-    for i, (s_image1, s_image2, kp1, w_kp2, kp2, desc1, desc2, top_k, kp_match_thresh) in enumerate(outputs):
+    for i, (s_image1, s_image2, kp1, w_kp2, kp2, kp1_desc, kp2_desc, top_k, kp_match_thresh) in enumerate(outputs):
         s_image1 = torch2cv(s_image1)
         s_image2 = torch2cv(s_image2)
 
@@ -212,10 +237,11 @@ def plot_keypoints(writer, epoch, outputs):
         """
         Coordinates matched keypoints
         """
-        _, km_kp1, km_kp2 = repeatability_score(kp1, w_kp2, kp2, top_k, kp_match_thresh)
+        _, km_kp1, km_kp2 = repeatability_score(kp1.unsqueeze(0), w_kp2.unsqueeze(0), kp2.unsqueeze(0),
+                                                top_k, kp_match_thresh)
 
-        km_kp1 = to_cv2_keypoint(km_kp1)
-        km_kp2 = to_cv2_keypoint(km_kp2)
+        km_kp1 = to_cv2_keypoint(km_kp1.squeeze(0))
+        km_kp2 = to_cv2_keypoint(km_kp2.squeeze(0))
 
         kp_matches = cv2.drawMatches(s_image1, km_kp1, s_image2, km_kp2, to_cv2_dmatch(km_kp1), None)
         kp_matches = cv2torch(kp_matches)
@@ -223,11 +249,12 @@ def plot_keypoints(writer, epoch, outputs):
         """
         Descriptors matched keypoints 
         """
-        _, ids = calculate_distance_matrix(desc1, desc2).min(dim=-1)
-        _, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1, w_kp2, kp2, ids, top_k, kp_match_thresh)
+        _, ids = calculate_inv_similarity_matrix(kp1_desc.unsqueeze(0), kp2_desc.unsqueeze(0)).min(dim=-1)
+        score, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1.unsqueeze(0), w_kp2.unsqueeze(0), kp2.unsqueeze(0),
+                                                             ids, top_k, kp_match_thresh)
 
-        dm_kp1 = to_cv2_keypoint(dm_kp1)
-        dm_kp2 = to_cv2_keypoint(dm_kp2)
+        dm_kp1 = to_cv2_keypoint(dm_kp1.squeeze(0))
+        dm_kp2 = to_cv2_keypoint(dm_kp2.squeeze(0))
 
         desc_matches = cv2.drawMatches(s_image1, dm_kp1, s_image2, dm_kp2, to_cv2_dmatch(dm_kp1), None)
         desc_matches = cv2torch(desc_matches)

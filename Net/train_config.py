@@ -45,7 +45,7 @@ cfg.METRIC.DES_RATIO = 0.7
 Train settings
 """
 cfg.TRAIN = EasyDict()
-cfg.TRAIN.BATCH_SIZE = 1
+cfg.TRAIN.BATCH_SIZE = 32
 cfg.TRAIN.NUM_EPOCHS = 3000
 cfg.TRAIN.LOG_INTERVAL = 2
 cfg.TRAIN.LR = 0.001
@@ -54,15 +54,15 @@ cfg.TRAIN.LR = 0.001
 Val settings
 """
 cfg.VAL = EasyDict()
-cfg.VAL.BATCH_SIZE = 1
+cfg.VAL.BATCH_SIZE = 32
 cfg.VAL.LOG_INTERVAL = 8
 
 """
-Val show settings
+Show settings
 """
 cfg.VAL_SHOW = EasyDict()
 cfg.VAL_SHOW.BATCH_SIZE = 1
-cfg.VAL_SHOW.LOG_INTERVAL = 10
+cfg.VAL_SHOW.LOG_INTERVAL = 5
 
 """
 Dataset settings

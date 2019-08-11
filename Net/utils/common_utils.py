@@ -28,15 +28,11 @@ def flat2grid(ids, w):
     return torch.cat((o_h, o_w), dim=-1)
 
 
-# def kp2coord(kp):
-#     return kp[:, [3, 2]].float()
-
-
 def torch2cv(img):
     """
-    :type img: 1 x C x H x W
+    :type img: C x H x W
     """
-    img = img.permute(0, 2, 3, 1)[0].cpu().detach().numpy()
+    img = img.permute(1, 2, 0).cpu().detach().numpy()
     img = (img * 255).astype(np.uint8)
     return img
 
@@ -49,13 +45,10 @@ def cv2torch(img):
 
 def to_cv2_keypoint(kp):
     """
-    :type kp: K x I
+    :type kp: N x 2
     """
-    h = kp.size(1) - 2
-    w = h + 1
-
     kp = kp.cpu().detach().numpy()
-    kp = list(map(lambda x: cv2.KeyPoint(x[w], x[h], 0), kp))
+    kp = list(map(lambda x: cv2.KeyPoint(x[1], x[0], 0), kp))
 
     return kp
 

@@ -130,7 +130,6 @@
 #         pos_dist = (self.pos_margin - dot_desc).clamp(min=0)
 #         neg_dist = (dot_desc - self.neg_margin).clamp(min=0)
 # Move keypoints coordinates to reduced spatial size
-# # TODO. SHTO ETO ZA HUINYA, BRATIK?
 # kp_grid = kp1[:, [3, 2]].unsqueeze(0).float()
 # kp_grid[:, 0] = kp_grid[:, 0] / self.grid_size
 # kp_grid[:, 1] = kp_grid[:, 1] / self.grid_size

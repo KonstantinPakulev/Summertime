@@ -16,7 +16,8 @@ from Net.utils.image_utils import (create_coordinates_grid,
                                    select_keypoints)
 
 from Net.utils.model_utils import sample_descriptors, space_to_depth
-from Net.utils.math_utils import calculate_similarity_matrix, calculate_similarity_vector, calculate_distance_matrix
+from Net.utils.math_utils import calculate_inv_similarity_matrix, calculate_inv_similarity_vector, \
+    calculate_distance_matrix
 
 
 class MSELoss(nn.Module):
@@ -44,14 +45,12 @@ class MSELoss(nn.Module):
         # Warp score2 to score1 space
         w_score2 = warp_image(score1, score2, homo12)
 
-        # Create visibility mask of the first image
-        vis_mask = erode_filter(torch.ones_like(score1).to(score1.device))
-        w_vis_mask = warp_image(score1, torch.ones_like(score2).to(score2.device), homo12).gt(0).float()
-        w_vis_mask = erode_filter(w_vis_mask)
+        # TODO. Gaussian blurring?
+        score1 = filter_border(score1)
+        w_score2 = filter_border(w_score2)
 
-        # Filter borders
-        score1 = score1 * vis_mask
-        w_score2 = w_score2 * w_vis_mask
+        # Create visibility mask of the first image
+        w_vis_mask = warp_image(score1, torch.ones_like(score2).to(score2.device), homo12).gt(0).float()
 
         # Extract keypoints and prepare ground truth
         score1, kp1 = select_keypoints(score1, self.nms_thresh, self.nms_k_size, self.top_k)
@@ -93,7 +92,7 @@ class HardTripletLoss(nn.Module):
         w_kp1_desc = sample_descriptors(desc2, w_kp1, self.grid_size)
 
         # Take positive matches
-        positive_sim = calculate_similarity_vector(kp1_desc, w_kp1_desc)
+        positive_sim = calculate_inv_similarity_vector(kp1_desc, w_kp1_desc)
         positive_sim = positive_sim.view(b, n, 1).repeat(1, 1, self.num_neg).view(b, n * self.num_neg)
 
         # Create neighbour mask
@@ -109,7 +108,7 @@ class HardTripletLoss(nn.Module):
 
         # Calculate similarity
         desc2 = desc2.permute((0, 2, 3, 1)).view(b, -1, c)
-        desc_sim = calculate_similarity_matrix(kp1_desc, desc2)
+        desc_sim = calculate_inv_similarity_matrix(kp1_desc, desc2)
 
         # Apply neighbour mask and get negatives
         desc_sim = desc_sim + mask * 5

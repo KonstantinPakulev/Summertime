@@ -56,8 +56,8 @@ from Net.utils.eval_utils import (LOSS,
                                   KP2,
                                   W_KP1,
                                   W_KP2,
-                                  DESC1,
-                                  DESC2,
+                                  KP1_DESC,
+                                  KP2_DESC,
 
                                   IMAGE_SIZE,
                                   TOP_K,
@@ -133,7 +133,7 @@ def output_metrics(writer, data_engine, state_engine, tag):
     writer.add_scalar(f"{tag}/{NNR_MATCH_SCORE}", nnr_ms, state_engine.state.iteration)
 
 
-def prepare_output_dict(batch, endpoint, device, config):
+def prepare_output_dict(batch, endpoint, config):
     return {
         LOSS: endpoint[LOSS],
         DET_LOSS: endpoint[DET_LOSS],
@@ -145,8 +145,8 @@ def prepare_output_dict(batch, endpoint, device, config):
         W_KP1: endpoint[W_KP1],
         W_KP2: endpoint[W_KP2],
 
-        DESC1: endpoint[DESC1],
-        DESC2: endpoint[DESC2],
+        KP1_DESC: endpoint[KP1_DESC],
+        KP2_DESC: endpoint[KP2_DESC],
 
         IMAGE_SIZE: batch[IMAGE1].size(),
 
@@ -188,8 +188,8 @@ def inference(model, batch, device, config):
         W_KP1: w_kp1,
         W_KP2: w_kp2,
 
-        DESC1: kp1_desc,
-        DESC2: kp2_desc,
+        KP1_DESC: kp1_desc,
+        KP2_DESC: kp2_desc,
 
         TOP_K: config.LOSS.TOP_K,
 
@@ -220,7 +220,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
                             num_workers=num_workers)
 
     show_loader = DataLoader(h_patches_dataset(VALIDATE_SHOW, config),
-                                 batch_size=config.VAL_SHOW.BATCH_SIZE)
+                             batch_size=config.VAL_SHOW.BATCH_SIZE)
 
     """
     Model, optimizer and criterion settings. 
@@ -276,8 +276,8 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
             W_KP1: w_kp1,
             W_KP2: w_kp2,
 
-            DESC1: kp1_desc,
-            DESC2: kp2_desc
+            KP1_DESC: kp1_desc,
+            KP2_DESC: kp2_desc
         }
 
     def train_iteration(engine, batch):
@@ -290,7 +290,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
             endpoint[LOSS].backward()
             optimizer.step()
 
-        return prepare_output_dict(batch, endpoint, device, config)
+        return prepare_output_dict(batch, endpoint, config)
 
     trainer = Engine(train_iteration)
 
@@ -300,7 +300,7 @@ def train(config, device, num_workers, log_dir, checkpoint_dir):
         with torch.no_grad():
             endpoint = iteration(engine, batch)
 
-        return prepare_output_dict(batch, endpoint, device, config)
+        return prepare_output_dict(batch, endpoint, config)
 
     validator = Engine(validation_iteration)
 

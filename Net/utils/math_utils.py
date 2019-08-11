@@ -1,7 +1,7 @@
 import torch
 
 
-def calculate_similarity_matrix(t1, t2):
+def calculate_inv_similarity_matrix(t1, t2):
     """
     :param t1: B x N1 x C
     :param t2: B x N2 x C
@@ -12,7 +12,7 @@ def calculate_similarity_matrix(t1, t2):
     return sim
 
 
-def calculate_similarity_vector(t1, t2):
+def calculate_inv_similarity_vector(t1, t2):
     """
     :param t1: B x N1 x C
     :param t2: B x N2 x C

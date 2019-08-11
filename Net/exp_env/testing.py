@@ -8,7 +8,7 @@ from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid
     warp_keypoints, gaussian_filter, select_keypoints, erode_filter
 from Net.utils.model_utils import sample_descriptors
 from Net.utils.common_utils import *
-from Net.utils.math_utils import calculate_similarity_matrix, calculate_similarity_vector
+from Net.utils.math_utils import calculate_inv_similarity_matrix, calculate_inv_similarity_vector
 
 from Net.nn.criterion import HardTripletLoss, MSELoss
 

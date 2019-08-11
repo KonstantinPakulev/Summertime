@@ -336,7 +336,10 @@ def select_keypoints(score, thresh, k_size, top_k):
     keypoints = flat2grid(flat_ids, w).squeeze(1)
 
     # Select maximum activations
-    keypoints_score = torch.zeros_like(score).to(score.device)
-    keypoints_score = keypoints_score.scatter(dim=-1, index=flat_ids, value=1).view(n, c, h, w)
+    kp_score_mask = torch.zeros_like(score).to(score.device)
+    kp_score_mask = kp_score_mask.scatter(dim=-1, index=flat_ids, value=1)
 
-    return keypoints_score, keypoints
+    score = score * kp_score_mask
+    score = score.view(n, c, h, w)
+
+    return score, keypoints

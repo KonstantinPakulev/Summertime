@@ -21,7 +21,6 @@ module_path = os.path.abspath(os.path.join('../..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
-
 from legacy.RF_Net.hpatch_dataset import (
     HpatchDataset,
     Grayscale,
@@ -323,17 +322,17 @@ if __name__ == "__main__":
             model.train()
             batch = parse_batch(sample_batched, device)
             with autograd.detect_anomaly():
-                # for des_train in range(0, cfg.TRAIN.DES):
-                #     model.zero_grad()
-                #     des_optim.zero_grad()
-                #     endpoint = model(batch)
-                #     _, _, desloss = (
-                #         model.module.criterion(endpoint)
-                #         if mgpu
-                #         else model.criterion(endpoint)
-                #     )
-                #     desloss.backward()
-                #     des_optim.step()
+                for des_train in range(0, cfg.TRAIN.DES):
+                    model.zero_grad()
+                    des_optim.zero_grad()
+                    endpoint = model(batch)
+                    _, _, desloss = (
+                        model.module.criterion(endpoint)
+                        if mgpu
+                        else model.criterion(endpoint)
+                    )
+                    desloss.backward()
+                    des_optim.step()
                 for det_train in range(0, cfg.TRAIN.DET):
                     model.zero_grad()
                     det_optim.zero_grad()
@@ -382,9 +381,8 @@ if __name__ == "__main__":
                     )
 
                     # eval log
-                    # parsed_valbatch = parse_unsqueeze(val_data.dataset[0], device)
-                    # ept = model(parsed_valbatch)
-                    ept = model(parse_unsqueeze(val_data.dataset[0], device))
+                    parsed_valbatch = parse_unsqueeze(val_data.dataset[0], device)
+                    ept = model(parsed_valbatch)
                     PLT, _, _ = (
                         model.module.criterion(ept) if mgpu else model.criterion(ept)
                     )

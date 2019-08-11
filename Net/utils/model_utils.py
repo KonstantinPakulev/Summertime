@@ -111,7 +111,7 @@ def multi_scale_nms(multi_scale_scores, k_size, strength=3.0):
 
     _, c, _, _ = multi_scale_scores.size()
 
-    exp = torch.exp(strength * (multi_scale_scores - max_scale_scores))
+    exp = torch.exp(strength * (multi_scale_scores - max_scale_scores.unsqueeze(1)))
     weight = torch.ones((1, c, k_size, k_size)).to(multi_scale_scores.device)
     sum_exp = F.conv2d(exp, weight=weight, padding=padding) + 1e-8
 
@@ -140,7 +140,7 @@ def sample_descriptors(desc, kp, grid_size):
     _, _, h, w = desc.size()
 
     kp_grid = kp[:, :, [1, 0]].float().unsqueeze(1) / grid_size
-    kp_grid[:, :, 0] = kp_grid[:, :, 0] / (w - 1) * 2 - 1
-    kp_grid[:, :, 1] = kp_grid[:, :, 1] / (h - 1) * 2 - 1
+    kp_grid[:, :, :, 0] = kp_grid[:, :, :, 0] / (w - 1) * 2 - 1
+    kp_grid[:, :, :, 1] = kp_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
     return F.grid_sample(desc, kp_grid).squeeze(2).permute(0, 2, 1)
