@@ -86,6 +86,6 @@ cfg.DATASET.view.csv = "hpatch_view.csv"
 cfg.DATASET.view.MEAN = 0.4230204841414801
 cfg.DATASET.view.STD = 0.25000138349993173
 
-cfg.DATASET.view.train_csv = "analyze.csv"
-cfg.DATASET.view.val_csv = "analyze.csv"
-cfg.DATASET.view.val_show_csv = "analyze.csv"
+cfg.DATASET.view.train_csv = "debug.csv"
+cfg.DATASET.view.val_csv = "debug.csv"
+cfg.DATASET.view.val_show_csv = "debug.csv"

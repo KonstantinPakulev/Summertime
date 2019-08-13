@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
-time="$(date "+%m_%d_%H_%M_%S")"
-log_dir="$(pwd)/runs/"${time}
-checkpoint_dir="$(pwd)/checkpoints/"${time}
+exp_id="train_alter_loss"
+exp_name="train_num_neigh25_num_neg1_sosr"
+log_dir="$(pwd)/runs/"${exp_name}
+checkpoint_dir="$(pwd)/checkpoints/"${exp_name}
+
+rm -rf "${log_dir}"
+rm -rf "${checkpoint_dir}"
 
 mkdir "${log_dir}"
 mkdir "${checkpoint_dir}"
@@ -13,6 +17,4 @@ echo "Checkpoints dir:: ${checkpoint_dir}"
 stdout=${log_dir}"/out.out"
 stderr=${log_dir}"/out.err"
 
-bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/train.py --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}" --config="train"
-
-# :mode=exclusive_process
+bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/train.py --exp_id="${exp_id}" --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}"

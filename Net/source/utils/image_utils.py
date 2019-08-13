@@ -4,7 +4,7 @@ from skimage import transform
 import torch
 import torch.nn.functional as F
 
-from Net.utils.common_utils import flat2grid
+from Net.source.utils.common_utils import flat2grid
 
 """
 Image manipulations

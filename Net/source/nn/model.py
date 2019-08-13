@@ -2,16 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from Net.utils.model_utils import (make_vgg_ms_block,
-                                   make_sdc_ms_block,
-                                   make_rf_ms_block,
+from Net.source.utils.model_utils import (make_vgg_ms_block,
+                                          make_sdc_ms_block,
+                                          make_rf_ms_block,
 
-                                   make_vgg_descriptor,
-                                   make_vgg_ms_detector,
-                                   make_vgg_ms_descriptor,
+                                          make_vgg_descriptor,
+                                          make_vgg_ms_detector,
+                                          make_vgg_ms_descriptor,
 
-                                   multi_scale_nms,
-                                   multi_scale_softmax)
+                                          multi_scale_nms,
+                                          multi_scale_softmax)
 
 
 class NetVGG(nn.Module):

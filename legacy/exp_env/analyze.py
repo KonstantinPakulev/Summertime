@@ -1,7 +1,5 @@
 import os
-import cv2
 import sys
-import numpy as np
 from argparse import ArgumentParser
 
 module_path = os.path.abspath(os.path.join('../..'))
@@ -11,36 +9,30 @@ if module_path not in sys.path:
 import torch
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
-from torchvision.utils import make_grid
 
 from tensorboardX import SummaryWriter
-from ignite.engine import Engine, Events
+from ignite.engine import Engine
 
-from Net.exp_env.analyze_config import cfg
-from Net.nn.model import NetSDC
-from Net.nn.criterion import HardTripletLoss
-from Net.hpatches_dataset import (
+from legacy.exp_env.analyze_config import cfg
+from Net.source.nn.model import NetSDC
+from Net.source.nn.criterion import HardTripletLoss
+from Net.source.hpatches_dataset import (
     HPatchesDataset,
 
     TRAIN,
     VALIDATE,
-    VALIDATE_SHOW,
-
     IMAGE1,
     IMAGE2,
     HOMO12,
     HOMO21,
-    S_IMAGE1,
-    S_IMAGE2,
-
     Grayscale,
     Normalize,
     RandomCrop,
     Rescale,
     ToTensor
 )
-from Net.utils.model_utils import sample_descriptors
-from Net.utils.image_utils import warp_image, select_keypoints, warp_keypoints
+from Net.source.utils.model_utils import sample_descriptors
+from Net.utils.image_utils import select_keypoints, warp_keypoints
 
 
 def h_patches_dataset(mode, config):

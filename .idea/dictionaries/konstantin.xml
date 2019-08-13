@@ -2,12 +2,14 @@
   <dictionary name="konstantin">
     <words>
       <w>conv</w>
+      <w>criterions</w>
       <w>dmatch</w>
       <w>homography</w>
       <w>keypoint</w>
       <w>keypoints</w>
       <w>logits</w>
       <w>softmax</w>
+      <w>sosr</w>
     </words>
   </dictionary>
 </component>

@@ -8,16 +8,12 @@ if module_path not in sys.path:
 import torch
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
-from torchvision.utils import make_grid
 
-from tensorboardX import SummaryWriter
 from ignite.engine import Engine, Events
 
-from Net.train_config import cfg as cfg_train
-from Net.exp_env.analyze_config import cfg as cfg_exp
-from Net.hpatches_dataset import (
+from legacy.exp_env.analyze_config import cfg as cfg_exp
+from Net.source.hpatches_dataset import (
     HPatchesDataset,
-    TRAIN,
     Grayscale,
     Normalize,
     RandomCrop,
@@ -25,7 +21,7 @@ from Net.hpatches_dataset import (
     ToTensor
 )
 from Net.utils.ignite_utils import AverageMetric
-from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, warp_image, dilate_filter
+from Net.utils.image_utils import create_coordinates_grid, warp_coordinates_grid, dilate_filter
 
 
 def calculate_ratio(des_size, homo, cfg):

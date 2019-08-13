@@ -6,7 +6,7 @@ from skimage import io, color
 import torch
 from torch.utils.data import Dataset
 
-from Net.utils.image_utils import resize_image, resize_homography, crop_image, crop_homography
+from Net.source.utils.image_utils import resize_image, resize_homography, crop_image, crop_homography
 
 # Available modes
 TRAIN = 'train'
