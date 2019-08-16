@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-exp_id="train_alter_loss"
-exp_name="train_num_neigh25_num_neg1_sosr"
+exp_id=${1}
+exp_name=${2}
 log_dir="$(pwd)/runs/"${exp_name}
 checkpoint_dir="$(pwd)/checkpoints/"${exp_name}
 

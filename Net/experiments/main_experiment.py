@@ -3,7 +3,7 @@ from easydict import EasyDict
 
 import torch
 from Net.source.nn.model import NetVGG
-from Net.source.nn.criterion import MSELoss, HardTripletLoss
+from Net.source.nn.criterion import MSELoss, HardQuadTripletSOSRLoss
 from torch.optim import Adam
 
 from torch.utils.data.dataloader import DataLoader
@@ -30,7 +30,7 @@ from Net.source.hpatches_dataset import (
     S_IMAGE1,
     S_IMAGE2
 )
-from Net.source.utils.image_utils import select_keypoints, warp_keypoints
+from Net.source.utils.image_utils import select_keypoints, warp_points
 from Net.source.utils.model_utils import sample_descriptors
 from Net.source.utils.ignite_utils import PeriodicMetric, AveragePeriodicMetric, AveragePeriodicListMetric, \
     CollectMetric
@@ -142,8 +142,8 @@ class TrainExperiment(BaseExperiment):
 
         cs.DES_LAMBDA = 1
         cs.MARGIN = 1
-        cs.NUM_NEIGH = 4
-        cs.NUM_NEG = 4
+        cs.NUM_NEG = 64
+        cs.SOS_NEG = 16
 
         cs.DET_LAMBDA = 100000
 
@@ -251,7 +251,8 @@ class TrainExperiment(BaseExperiment):
         self.criterions[DET_CRITERION] = MSELoss(cs.NMS_THRESH, cs.NMS_K_SIZE,
                                                  cs.TOP_K,
                                                  cs.GAUSS_K_SIZE, cs.GAUSS_SIGMA, cs.DET_LAMBDA)
-        self.criterions[DES_CRITERION] = HardTripletLoss(ms.GRID_SIZE, cs.MARGIN, cs.NUM_NEIGH, cs.NUM_NEG, cs.DES_LAMBDA)
+        self.criterions[DES_CRITERION] = HardQuadTripletSOSRLoss(ms.GRID_SIZE, cs.MARGIN, cs.NUM_NEG, cs.SOS_NEG,
+                                                                 cs.DES_LAMBDA)
 
     def init_optimizers(self):
         self.optimizers[OPTIMIZER] = Adam(self.models[MODEL].parameters())
@@ -295,11 +296,11 @@ class TrainExperiment(BaseExperiment):
         kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
         kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
 
-        w_kp1 = warp_keypoints(kp1, homo12)
-        w_kp2 = warp_keypoints(kp2, homo21)
+        w_kp1 = warp_points(kp1, homo12)
+        w_kp2 = warp_points(kp2, homo21)
 
-        des_loss1 = triplet_criterion(w_kp1, kp1_desc, desc2)
-        des_loss2 = triplet_criterion(w_kp2, kp2_desc, desc1)
+        des_loss1 = triplet_criterion(kp1, w_kp1, kp1_desc, desc2, homo12)
+        des_loss2 = triplet_criterion(kp2, w_kp2, kp2_desc, desc1, homo21)
 
         det_loss = (det_loss1 + det_loss2) / 2
         des_loss = (des_loss1 + des_loss2) / 2
@@ -343,8 +344,8 @@ class TrainExperiment(BaseExperiment):
         kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
         kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
 
-        w_kp1 = warp_keypoints(kp1, homo12)
-        w_kp2 = warp_keypoints(kp2, homo21)
+        w_kp1 = warp_points(kp1, homo12)
+        w_kp2 = warp_points(kp2, homo21)
 
         return {
             S_IMAGE1: batch[S_IMAGE1],
@@ -559,12 +560,15 @@ class TrainExperiment(BaseExperiment):
             kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
             kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
 
-            w_kp1 = warp_keypoints(kp1, homo12)
-            w_kp2 = warp_keypoints(kp2, homo21)
+            w_kp1 = warp_points(kp1, homo12)
+            w_kp2 = warp_points(kp2, homo21)
 
             output = {
                 S_IMAGE1: batch[S_IMAGE1],
                 S_IMAGE2: batch[S_IMAGE2],
+
+                HOMO12: homo12,
+                HOMO21: homo21,
 
                 DESC1: desc1,
                 DESC2: desc2,

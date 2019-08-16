@@ -772,4 +772,110 @@
 #
 #     train(_config, _device, _num_workers, _log_dir, _checkpoint_dir)
 
-
+# class HardTripletLoss(nn.Module):
+#
+#     def __init__(self, grid_size, margin, num_neigh, num_neg, loss_lambda):
+#         super().__init__()
+#
+#         self.grid_size = grid_size
+#
+#         self.margin = margin
+#         self.num_neigh = num_neigh
+#         self.num_neg = num_neg
+#
+#         self.loss_lambda = loss_lambda
+#
+#     def forward(self, w_kp1, kp1_desc, desc2):
+#         """
+#         :param w_kp1: B x N x 2
+#         :param kp1_desc: B x N x C
+#         :param desc2: B x C x H x W
+#         :return: float
+#         """
+#         b, n, c = kp1_desc.size()
+#
+#         w_kp1_desc = sample_descriptors(desc2, w_kp1, self.grid_size)
+#
+#         # Take positive matches
+#         positive_sim = calculate_inv_similarity_vector(kp1_desc, w_kp1_desc)
+#         positive_sim = positive_sim.view(b, n, 1).repeat(1, 1, self.num_neg).view(b, n * self.num_neg)
+#
+#         # Create neighbour mask
+#         kp_grid = w_kp1[:, :, [1, 0]]
+#         coo_grid = create_coordinates_grid(desc2).view(b, -1, 2).to(desc2.device)
+#         coo_grid = coo_grid * self.grid_size + self.grid_size // 2
+#
+#         grid_dist = calculate_distance_matrix(kp_grid, coo_grid)
+#         _, ids = grid_dist.topk(k=self.num_neigh, largest=False, dim=-1)
+#
+#         mask = torch.zeros_like(grid_dist).to(grid_dist.device)
+#         mask = mask.scatter(dim=-1, index=ids, value=1)
+#
+#         # Calculate similarity
+#         desc2 = desc2.permute((0, 2, 3, 1)).view(b, -1, c)
+#         desc_sim = calculate_inv_similarity_matrix(kp1_desc, desc2)
+#
+#         # Apply neighbour mask and get negatives
+#         desc_sim = desc_sim + mask * 5
+#
+#         neg_sim = desc_sim.topk(k=self.num_neg, dim=-1, largest=False)[0].view(b, -1)
+#
+#         loss = torch.clamp(positive_sim - neg_sim + self.margin, min=0).mean() * self.loss_lambda
+#
+#         return loss
+# class HardQuadTripletLoss(nn.Module):
+#
+#     def __init__(self, grid_size, margin, num_neg, loss_lambda):
+#         super().__init__()
+#
+#         self.grid_size = grid_size
+#
+#         self.margin = margin
+#         self.num_neg = num_neg
+#
+#         self.loss_lambda = loss_lambda
+#
+#     def forward(self, kp1, w_kp1, kp1_desc, desc1, desc2, homo12):
+#         """
+#         :param kp1 B x N x 2
+#         :param w_kp1: B x N x 2
+#         :param kp1_desc: B x N x C
+#         :param desc1: B x C x H x W
+#         :param desc2: B x C x H x W
+#         :param homo12: B x 3 x 3
+#         :return: float
+#         """
+#         b, n, c = kp1_desc.size()
+#
+#         w_kp1_desc = sample_descriptors(desc2, w_kp1, self.grid_size)
+#
+#         # Take positive matches
+#         positive_sim = calculate_inv_similarity_vector(kp1_desc, w_kp1_desc)
+#         positive_sim = positive_sim.view(b, n, 1).repeat(1, 1, self.num_neg).view(b, n * self.num_neg)
+#
+#         # Create neighbour mask
+#         coo_grid = create_res_desc_coordinates_grid(desc1, self.grid_size).view(desc1.size(0), -1, 2).to(desc1.device)
+#
+#         grid_dist1 = calculate_distance_matrix(kp1, coo_grid)
+#         _, kp1_cell_ids = grid_dist1.topk(k=4, largest=False, dim=-1)
+#
+#         kp1_cell_ids = kp1_cell_ids.view(b, -1).unsqueeze(-1).repeat(1, 1, 2)
+#         kp1_cells = coo_grid.gather(dim=1, index=kp1_cell_ids)
+#
+#         w_kp1_cells = warp_keypoints(kp1_cells, homo12)
+#
+#         grid_dist2 = calculate_distance_matrix(w_kp1_cells, coo_grid)
+#         neigh_mask = grid_dist2 <= (self.grid_size - 0.5)
+#         neigh_mask = neigh_mask.view(b, n, 4, -1).sum(dim=2).float()
+#
+#         # Calculate similarity
+#         desc2 = desc2.permute((0, 2, 3, 1)).view(b, -1, c)
+#         desc_sim = calculate_inv_similarity_matrix(kp1_desc, desc2)
+#
+#         #  Apply neighbour mask and get negatives
+#         desc_sim = desc_sim + neigh_mask * 5
+#         neg_sim = desc_sim.topk(k=self.num_neg, dim=-1, largest=False)[0].view(b, -1)
+#
+#         loss = (torch.clamp(positive_sim - neg_sim + self.margin, min=0) ** 2).mean() * self.loss_lambda
+#
+#         return loss

@@ -135,6 +135,18 @@ def create_coordinates_grid(out):
     return grid
 
 
+def create_desc_coordinates_grid(out, grid_size):
+    """
+    :param out: B x C x H x W
+    :param grid_size: int
+    """
+    coo_grid = create_coordinates_grid(out)
+    coo_grid = coo_grid * grid_size
+    coo_grid = coo_grid[:, :, :, [1, 0]]
+
+    return coo_grid
+
+
 def warp_coordinates_grid(grid, homography):
     """
     :param grid: N x H x W x 2
@@ -161,20 +173,20 @@ def warp_coordinates_grid(grid, homography):
     return w_grid
 
 
-def warp_keypoints(keypoints, homography):
+def warp_points(points, homography):
     """
-    :param keypoints: B x N x 2
+    :param points: B x N x 2
     :param homography: B x 3 x 3
     :return B x N x 2
     """
-    b, n, _ = keypoints.size()
+    b, n, _ = points.size()
 
     #  Because warping operates on x,y coordinates we also need to swap h and w
-    h_keypoints = keypoints[:, :, [1, 0]].float()
-    h_keypoints = torch.cat((h_keypoints, torch.ones((b, n, 1)).to(keypoints.device)), dim=-1)
+    h_keypoints = points[:, :, [1, 0]].float()
+    h_keypoints = torch.cat((h_keypoints, torch.ones((b, n, 1)).to(points.device)), dim=-1)
     h_keypoints = h_keypoints.view((b, -1, 3)).permute(0, 2, 1)  # B x 3 x N
 
-    # Warp keypoints
+    # Warp points
     w_keypoints = torch.bmm(homography, h_keypoints)
     w_keypoints = w_keypoints.permute(0, 2, 1)  # B x N x 3
 

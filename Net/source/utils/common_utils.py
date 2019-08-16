@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 
 import torch
 
@@ -26,6 +27,30 @@ def flat2grid(ids, w):
     o_w = o_w.unsqueeze(-1)
 
     return torch.cat((o_h, o_w), dim=-1)
+
+
+def plot_figures(figures, nrows=1, ncols=1, size=None):
+    """Plot a dictionary of figures.
+
+    Parameters
+    ----------
+    figures : <title, figure> dictionary
+    ncols : number of columns of subplots wanted in the display
+    nrows : number of rows of subplots wanted in the figure
+    """
+
+    fig, axes_list = plt.subplots(ncols=ncols, nrows=nrows, figsize=size)
+    for ind, title in zip(range(len(figures)), figures):
+        if nrows * ncols != 1:
+            axes_list.ravel()[ind].imshow(figures[title], cmap=plt.jet())
+            axes_list.ravel()[ind].set_title(title)
+            axes_list.ravel()[ind].set_axis_off()
+        else:
+            axes_list.imshow(figures[title], cmap=plt.jet())
+            axes_list.set_title(title)
+            axes_list.set_axis_off()
+
+    plt.tight_layout()  # optional
 
 
 """

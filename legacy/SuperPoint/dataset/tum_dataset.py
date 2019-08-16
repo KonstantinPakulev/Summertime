@@ -51,7 +51,6 @@ class TUMDataset(Dataset):
         mask = np.ones(image.shape[1:], dtype=np.float)
         warped_mask = compute_valid_mask(image.shape[1:], homography, self.config['warped_pair']['valid_border_margin'])
 
-        # TODO. Options: normalize by max value, normalize by collected statistics
         depth = np.asarray(io.imread(depth_path)).astype(np.float)
         depth /= depth.ravel().max()
 

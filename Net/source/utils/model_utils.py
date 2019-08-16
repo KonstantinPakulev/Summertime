@@ -143,4 +143,4 @@ def sample_descriptors(desc, kp, grid_size):
     kp_grid[:, :, :, 0] = kp_grid[:, :, :, 0] / (w - 1) * 2 - 1
     kp_grid[:, :, :, 1] = kp_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
-    return F.grid_sample(desc, kp_grid).squeeze(2).permute(0, 2, 1)
+    return F.normalize(F.grid_sample(desc, kp_grid).squeeze(2)).permute(0, 2, 1)

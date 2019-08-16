@@ -9,7 +9,7 @@ if module_path not in sys.path:
 import torch
 
 from Net.experiments.main_experiment import TrainExperiment
-from Net.experiments.other_experiments import DebugTrainExperiment, TrainExperimentAlter, TrainExperimentQHT, TrainExperimentSOSR
+from Net.experiments.custom_experiments import DebugTrainExperiment, TrainExperimentAlter, TrainExperimentMax
 
 
 if __name__ == "__main__":
@@ -29,8 +29,8 @@ if __name__ == "__main__":
         experiment = TrainExperiment(device, args.log_dir, args.checkpoint_dir)
     elif args.exp_id == 'train_alter':
         experiment = TrainExperimentAlter(device, args.log_dir, args.checkpoint_dir)
-    elif args.exp_id == 'train_alter_loss':
-        experiment = TrainExperimentSOSR(device, args.log_dir, args.checkpoint_dir)
+    elif args.exp_id == 'train_max':
+        experiment = TrainExperimentMax(device, args.log_dir, args.checkpoint_dir)
     else:
         experiment = DebugTrainExperiment(device, args.log_dir, args.checkpoint_dir)
 

@@ -58,7 +58,6 @@ def label():
                 probs = probs.detach().cpu().numpy()
                 probs[np.where(probs)] = 1
 
-                # TODO. Does it matter how do we save keypoint map? Either keep probabilities or equalise them
                 skimage.io.imsave(path, to255scale(probs))
 
     with open(os.path.join(dataset.base_path, 'keypoint_map.txt'), 'w') as file:

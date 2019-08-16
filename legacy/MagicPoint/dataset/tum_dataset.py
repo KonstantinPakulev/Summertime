@@ -28,7 +28,6 @@ class TUMDataset(Dataset):
 
         # Correct order of channels and make shape in form of (c, h, w)
         image = normalize_image(np.asarray(io.imread(image_path))[..., [2, 1, 0]]).transpose((2, 0, 1))
-        # TODO. Options: normalize by max value, normalize by collected statistics
         depth = np.asarray(io.imread(depth_path)).astype(np.float)
         depth /= depth.ravel().max()
 

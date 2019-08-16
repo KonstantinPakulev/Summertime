@@ -7,7 +7,7 @@ from torchvision.utils import make_grid
 from Net.source.utils.common_utils import torch2cv, to_cv2_keypoint, cv2torch, to_cv2_dmatch, \
     draw_cv_keypoints, draw_cv_matches
 from Net.source.utils.math_utils import calculate_distance_matrix, calculate_inv_similarity_matrix
-from Net.source.utils.image_utils import warp_keypoints
+from Net.source.utils.image_utils import warp_points
 
 """
 Evaluation functions
