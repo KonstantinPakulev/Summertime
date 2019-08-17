@@ -81,6 +81,11 @@ KP2_DESC = 'kp2_desc'
 DESC1 = 'desc1'
 DESC2 = 'desc2'
 
+SCORE1 = 'score1'
+SCORE2 = 'score2'
+KP1_SCORE = 'kp_score1'
+KP2_SCORE = 'kp_score2'
+
 """
 Metric keys
 """
@@ -554,8 +559,8 @@ class TrainExperiment(BaseExperiment):
             score1, desc1 = model(image1)
             score2, desc2 = model(image2)
 
-            _, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
-            _, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+            kp1_score, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+            kp2_score, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
 
             kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
             kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
@@ -566,6 +571,12 @@ class TrainExperiment(BaseExperiment):
             output = {
                 S_IMAGE1: batch[S_IMAGE1],
                 S_IMAGE2: batch[S_IMAGE2],
+
+                SCORE1: score1,
+                SCORE2: score2,
+
+                KP1_SCORE: kp1_score,
+                KP2_SCORE: kp2_score,
 
                 HOMO12: homo12,
                 HOMO21: homo21,
