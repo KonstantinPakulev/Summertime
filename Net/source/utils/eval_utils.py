@@ -154,7 +154,7 @@ Results visualisation
 """
 
 
-def plot_keypoints(writer, epoch, outputs, top_k, kp_match_thresh):
+def plot_keypoints_and_descriptors(writer, epoch, outputs, top_k, kp_match_thresh):
     """
     :param writer: SummaryWriter
     :param epoch: Current train epoch
@@ -180,16 +180,18 @@ def plot_keypoints(writer, epoch, outputs, top_k, kp_match_thresh):
 
         kp_matches = cv2torch(draw_cv_matches(s_image1, s_image2, km_kp1.squeeze(0), km_kp2.squeeze(0)))
 
-        """
-        Descriptors matched keypoints 
-        """
-        _, ids = calculate_inv_similarity_matrix(kp1_desc.unsqueeze(0), kp2_desc.unsqueeze(0)).min(dim=-1)
-        score, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1.unsqueeze(0), w_kp2.unsqueeze(0), kp2.unsqueeze(0),
-                                                             ids, top_k, kp_match_thresh)
-
-        desc_matches = cv2torch(draw_cv_matches(s_image1, s_image2, dm_kp1.squeeze(0), dm_kp2.squeeze(0)))
-
         writer.add_image(f"s{i}_keypoints", make_grid(torch.cat((s_image1_kp, s_image2_kp), dim=0)),
                          epoch)
         writer.add_image(f"s{i}_keypoints_matches", kp_matches, epoch)
-        writer.add_image(f"s{i}_descriptor_matches", desc_matches, epoch)
+
+        """
+        Descriptors matched keypoints 
+        """
+        if kp1_desc is not None and kp2_desc is not None:
+            _, ids = calculate_inv_similarity_matrix(kp1_desc.unsqueeze(0), kp2_desc.unsqueeze(0)).min(dim=-1)
+            score, dm_kp1, dm_kp2 = nearest_neighbor_match_score(kp1.unsqueeze(0), w_kp2.unsqueeze(0), kp2.unsqueeze(0),
+                                                                 ids, top_k, kp_match_thresh)
+
+            desc_matches = cv2torch(draw_cv_matches(s_image1, s_image2, dm_kp1.squeeze(0), dm_kp2.squeeze(0)))
+
+            writer.add_image(f"s{i}_descriptor_matches", desc_matches, epoch)

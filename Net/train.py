@@ -9,7 +9,7 @@ if module_path not in sys.path:
 import torch
 
 from Net.experiments.main_experiment import TrainExperiment
-from Net.experiments.custom_experiments import DebugTrainExperiment, TrainExperimentAlter, TrainExperimentMax
+from Net.experiments.custom_experiment import DebugTrainExperiment, TrainExperimentDetector, TrainExperimentAlter, TrainExperimentLoss
 
 
 if __name__ == "__main__":
@@ -26,11 +26,11 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     if args.exp_id == 'train':
-        experiment = TrainExperiment(device, args.log_dir, args.checkpoint_dir)
+        experiment = TrainExperimentDetector(device, args.log_dir, args.checkpoint_dir)
     elif args.exp_id == 'train_alter':
         experiment = TrainExperimentAlter(device, args.log_dir, args.checkpoint_dir)
-    elif args.exp_id == 'train_max':
-        experiment = TrainExperimentMax(device, args.log_dir, args.checkpoint_dir)
+    elif args.exp_id == 'train_loss':
+        experiment = TrainExperimentLoss(device, args.log_dir, args.checkpoint_dir)
     else:
         experiment = DebugTrainExperiment(device, args.log_dir, args.checkpoint_dir)
 

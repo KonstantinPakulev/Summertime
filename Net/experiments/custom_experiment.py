@@ -27,6 +27,39 @@ class TrainExperimentAlter(TrainExperiment):
         return cs
 
 
+class TrainExperimentLoss(TrainExperiment):
+
+    def get_criterion_settings(self):
+        cs = EasyDict()
+
+        cs.DES_LAMBDA = 1
+        cs.MARGIN = 1
+        cs.NUM_NEG = 64
+        cs.SOS_NEG = 16
+
+        cs.DET_LAMBDA = 50
+
+        cs.NMS_THRESH = 0.0
+        cs.NMS_K_SIZE = 5
+
+        cs.TOP_K = 512
+
+        cs.GAUSS_K_SIZE = 15
+        cs.GAUSS_SIGMA = 0.5
+
+        return cs
+
+    def init_criterions(self):
+        ms = self.get_model_settings()
+        cs = self.get_criterion_settings()
+
+        self.criterions[DET_CRITERION] = MSELoss(cs.NMS_THRESH, cs.NMS_K_SIZE,
+                                                 cs.TOP_K,
+                                                 cs.GAUSS_K_SIZE, cs.GAUSS_SIGMA, cs.DET_LAMBDA)
+        self.criterions[DES_CRITERION] = HardQuadTripletSOSRLoss(ms.GRID_SIZE, cs.MARGIN, cs.NUM_NEG, cs.SOS_NEG,
+                                                                 cs.DES_LAMBDA)
+
+
 class TrainExperimentMax(TrainExperiment):
 
     def get_loaders_settings(self):
@@ -49,7 +82,7 @@ class TrainExperimentMax(TrainExperiment):
         return ms
 
 
-class DebugTrainExperiment(TrainExperiment):
+class DebugTrainExperiment(TrainExperimentDetector):
 
     def get_dataset_settings(self):
         ds = EasyDict()
@@ -60,6 +93,7 @@ class DebugTrainExperiment(TrainExperiment):
         ds.TRAIN_CSV = "debug.csv"
         ds.VAL_CSV = "debug.csv"
         ds.SHOW_CSV = "debug.csv"
+        ds.ANALYZE_CSV = "analyze.csv"
 
         return ds
 
@@ -69,6 +103,7 @@ class DebugTrainExperiment(TrainExperiment):
         ls.TRAIN_BATCH_SIZE = 1
         ls.VAL_BATCH_SIZE = 1
         ls.SHOW_BATCH_SIZE = 1
+        ls.ANALYZE_BATCH_SIZE = 1
         ls.NUM_WORKERS = 0
 
         return ls
@@ -99,7 +134,7 @@ class DebugTrainExperiment(TrainExperiment):
     def get_experiment_settings(self):
         es = EasyDict()
 
-        es.NUM_EPOCHS = 300
+        es.NUM_EPOCHS = 100
 
         return es
 
