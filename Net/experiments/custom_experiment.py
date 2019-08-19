@@ -1,14 +1,42 @@
 from easydict import EasyDict
 
 from Net.experiments.main_experiment import *
+from Net.source.nn.criterion import SimpleHardQuadTripletSOSRLoss
 
 
 class TrainExperimentAlter(TrainExperiment):
-    pass
+    def get_criterion_settings(self):
+        cs = EasyDict()
+
+        cs.DES_LAMBDA = 1
+        cs.MARGIN = 1
+        cs.NUM_NEG = 32
+        cs.SOS_NEG = 16
+
+        cs.DET_LAMBDA = 50
+
+        cs.NMS_THRESH = 0.0
+        cs.NMS_K_SIZE = 5
+
+        cs.TOP_K = 512
+
+        cs.GAUSS_K_SIZE = 15
+        cs.GAUSS_SIGMA = 0.5
+
+        return cs
 
 
 class TrainExperimentLoss(TrainExperiment):
-    pass
+
+    def init_criterions(self):
+        ms = self.get_model_settings()
+        cs = self.get_criterion_settings()
+
+        self.criterions[DET_CRITERION] = MSELoss(cs.NMS_THRESH, cs.NMS_K_SIZE,
+                                                 cs.TOP_K,
+                                                 cs.GAUSS_K_SIZE, cs.GAUSS_SIGMA, cs.DET_LAMBDA)
+        self.criterions[DES_CRITERION] = SimpleHardQuadTripletSOSRLoss(ms.GRID_SIZE, cs.MARGIN, cs.NUM_NEG, cs.SOS_NEG,
+                                                                       cs.DES_LAMBDA)
 
 
 class TrainExperimentMax(TrainExperiment):
@@ -33,7 +61,7 @@ class TrainExperimentMax(TrainExperiment):
         return ms
 
 
-class DebugTrainExperiment(TrainExperimentDetector):
+class DebugTrainExperiment(TrainExperiment):
 
     def get_dataset_settings(self):
         ds = EasyDict()
@@ -64,6 +92,7 @@ class DebugTrainExperiment(TrainExperimentDetector):
 
         ms.GRID_SIZE = 8
         ms.DESCRIPTOR_SIZE = 4
+        ms.NMS_KERNEL_SIZE = 15
 
         return ms
 

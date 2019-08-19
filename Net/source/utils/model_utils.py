@@ -128,22 +128,20 @@ def space_to_depth(tensor, grid_size):
 def multi_scale_nms(multi_scale_scores, k_size, strength=3.0):
     padding = k_size // 2
 
-    nms_scale_scores = F.max_pool2d(multi_scale_scores, kernel_size=k_size, padding=padding, stride=1)
-    max_scale_scores, _ = nms_scale_scores.max(dim=1)
+    nms_score = F.max_pool2d(multi_scale_scores, kernel_size=k_size, padding=padding, stride=1)
+    max_nms_score, _ = nms_score.max(dim=1)
 
-    _, c, _, _ = multi_scale_scores.size()
-
-    exp = torch.exp(strength * (multi_scale_scores - max_scale_scores.unsqueeze(1)))
-    weight = torch.ones((1, c, k_size, k_size)).to(multi_scale_scores.device)
+    exp = torch.exp(strength * (multi_scale_scores - max_nms_score.unsqueeze(1)))
+    weight = torch.ones((1, multi_scale_scores.size(1), k_size, k_size)).to(multi_scale_scores.device)
     sum_exp = F.conv2d(exp, weight=weight, padding=padding) + 1e-8
 
     return exp / sum_exp
 
 
 def multi_scale_softmax(multi_scale_scores, strength=100.0):
-    max_scores, _ = multi_scale_scores.max(dim=1, keepdim=True)
+    max_score, _ = multi_scale_scores.max(dim=1, keepdim=True)
 
-    exp = torch.exp(strength * (multi_scale_scores - max_scores))
+    exp = torch.exp(strength * (multi_scale_scores - max_score))
     sum_exp = exp.sum(dim=1, keepdim=True) + 1e-8
     softmax = exp / sum_exp
 
@@ -152,20 +150,21 @@ def multi_scale_softmax(multi_scale_scores, strength=100.0):
     return score
 
 
-def multi_scale_nms_softmax(multi_scale_scores):
+def multi_scale_nms_softmax(multi_scale_scores, ks):
     exp_score = torch.exp(multi_scale_scores)
-    exp_sum = F.conv2d(exp_score, weight=torch.ones((exp_score.size(1), exp_score.size(1), 3, 3)), padding=1) + 1e-8
+    weight = torch.ones((exp_score.size(1), exp_score.size(1), ks, ks)).to(multi_scale_scores.device)
+    exp_sum = F.conv2d(exp_score, weight=weight, padding=ks // 2) + 1e-8
 
-    score = exp_score / exp_sum
+    score_nms = exp_score / exp_sum
 
-    exp_score = torch.exp(score)
+    exp_score = torch.exp(score_nms)
     exp_sum = exp_score.sum(dim=1, keepdim=True) + 1e-8
 
-    score = exp_score / exp_sum
+    ms_score = exp_score / exp_sum
 
-    score = torch.sum(multi_scale_scores * score, dim=1, keepdim=True)
+    ms_score = torch.sum(multi_scale_scores * ms_score, dim=1, keepdim=True)
 
-    return score
+    return ms_score
 
 
 def sample_descriptors(desc, kp, grid_size):

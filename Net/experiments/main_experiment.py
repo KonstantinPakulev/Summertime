@@ -2,7 +2,7 @@ import os
 from easydict import EasyDict
 
 import torch
-from Net.source.nn.model import NetVGG, NetVGGDebug
+from Net.source.nn.model import NetVGG
 from Net.source.nn.criterion import MSELoss, HardQuadTripletSOSRLoss
 from torch.optim import Adam
 
@@ -30,7 +30,7 @@ from Net.source.hpatches_dataset import (
     S_IMAGE1,
     S_IMAGE2
 )
-from Net.source.utils.image_utils import select_keypoints, warp_points
+from Net.source.utils.image_utils import select_keypoints, warp_points, get_visible_keypoints_mask
 from Net.source.utils.model_utils import sample_descriptors
 from Net.source.utils.ignite_utils import PeriodicMetric, AveragePeriodicMetric, AveragePeriodicListMetric, \
     CollectMetric
@@ -77,6 +77,8 @@ KP1 = 'kp1'
 KP2 = 'kp2'
 W_KP1 = 'w_kp1'
 W_KP2 = 'w_kp2'
+VISIBLE1 = 'visible1'
+VISIBLE2 = 'visible2'
 KP1_DESC = 'kp1_desc'
 KP2_DESC = 'kp2_desc'
 DESC1 = 'desc1'
@@ -84,6 +86,7 @@ DESC2 = 'desc2'
 
 DEBUG1 = 'debug1'
 DEBUG2 = 'debug2'
+
 SCORE1 = 'score1'
 SCORE2 = 'score2'
 
@@ -140,6 +143,7 @@ class TrainExperiment(BaseExperiment):
 
         ms.GRID_SIZE = 8
         ms.DESCRIPTOR_SIZE = 32
+        ms.NMS_KERNEL_SIZE = 15
 
         return ms
 
@@ -248,7 +252,7 @@ class TrainExperiment(BaseExperiment):
 
     def init_models(self):
         ms = self.get_model_settings()
-        self.models[MODEL] = NetVGG(ms.GRID_SIZE, ms.DESCRIPTOR_SIZE).to(self.device)
+        self.models[MODEL] = NetVGG(ms.GRID_SIZE, ms.DESCRIPTOR_SIZE, ms.NMS_KERNEL_SIZE).to(self.device)
 
     def init_criterions(self):
         ms = self.get_model_settings()
@@ -305,6 +309,9 @@ class TrainExperiment(BaseExperiment):
         w_kp1 = warp_points(kp1, homo12)
         w_kp2 = warp_points(kp2, homo21)
 
+        visible1 = get_visible_keypoints_mask(image1, w_kp2)
+        visible2 = get_visible_keypoints_mask(image2, w_kp1)
+
         des_loss1 = triplet_criterion(kp1, w_kp1, kp1_desc, desc2, homo12)
         des_loss2 = triplet_criterion(kp2, w_kp2, kp2_desc, desc1, homo21)
 
@@ -323,6 +330,9 @@ class TrainExperiment(BaseExperiment):
 
             W_KP1: w_kp1,
             W_KP2: w_kp2,
+
+            VISIBLE1: visible1,
+            VISIBLE2: visible2,
 
             KP1_DESC: kp1_desc,
             KP2_DESC: kp2_desc
@@ -347,11 +357,14 @@ class TrainExperiment(BaseExperiment):
         _, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
         _, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
 
-        kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
-        kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
-
         w_kp1 = warp_points(kp1, homo12)
         w_kp2 = warp_points(kp2, homo21)
+
+        visible1 = get_visible_keypoints_mask(image1, w_kp2)
+        visible2 = get_visible_keypoints_mask(image2, w_kp1)
+
+        kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
+        kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
 
         return {
             S_IMAGE1: batch[S_IMAGE1],
@@ -362,6 +375,9 @@ class TrainExperiment(BaseExperiment):
 
             W_KP1: w_kp1,
             W_KP2: w_kp2,
+
+            VISIBLE1: visible1,
+            VISIBLE2: visible2,
 
             KP1_DESC: kp1_desc,
             KP2_DESC: kp2_desc,
@@ -422,7 +438,6 @@ class TrainExperiment(BaseExperiment):
                                                                                           OPTIMIZER: optimizers})
 
         ls = self.get_log_settings()
-        cs = self.get_criterion_settings()
         ms = self.get_metric_settings()
 
         def l_loss(x):
@@ -435,11 +450,13 @@ class TrainExperiment(BaseExperiment):
             return x[DES_LOSS]
 
         def l_rep_score(x):
-            return repeatability_score(x[KP1], x[W_KP2], x[KP2], cs.TOP_K, ms.DET_THRESH)[0]
+            return (repeatability_score(x[KP1], x[W_KP2], x[KP2], x[VISIBLE1], ms.DET_THRESH)[0] +
+                    repeatability_score(x[KP2], x[W_KP1], x[KP1], x[VISIBLE2], ms.DET_THRESH)[0]) / 2
 
         def l_match_score(x):
-            return match_score(x[KP1], x[W_KP2], x[KP2], x[KP1_DESC], x[KP2_DESC],
-                               cs.TOP_K, ms.DET_THRESH, ms.DES_THRESH, ms.DES_RATIO)
+            ms1 = match_score(x[KP1], x[W_KP2], x[KP2], x[VISIBLE1], x[KP1_DESC], x[KP2_DESC], ms.DET_THRESH, ms.DES_THRESH, ms.DES_RATIO)
+            ms2 = match_score(x[KP2], x[W_KP1], x[KP1], x[VISIBLE2], x[KP2_DESC], x[KP1_DESC], ms.DET_THRESH, ms.DES_THRESH, ms.DES_RATIO)
+            return [(m1 + m2) / 2 for m1, m2 in zip(ms1, ms2)]
 
         def l_collect_show(x):
             return x[S_IMAGE1][0], x[S_IMAGE2][0], x[KP1][0], x[W_KP2][0], x[KP2][0], x[KP1_DESC][0], x[KP2_DESC][0]
@@ -507,8 +524,7 @@ class TrainExperiment(BaseExperiment):
         def on_se(engine):
             show_engine.run(show_loader)
 
-            plot_keypoints_and_descriptors(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW],
-                                           cs.TOP_K, ms.DET_THRESH)
+            plot_keypoints_and_descriptors(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW], ms.DET_THRESH)
 
     def run_experiment(self):
         es = self.get_experiment_settings()
@@ -606,7 +622,7 @@ class TrainExperimentDetector(TrainExperiment):
 
     def init_models(self):
         ms = self.get_model_settings()
-        self.models[MODEL] = NetVGGDebug(ms.GRID_SIZE, ms.DESCRIPTOR_SIZE).to(self.device)
+        self.models[MODEL] = NetVGG(ms.GRID_SIZE, ms.DESCRIPTOR_SIZE, ms.NMS_KERNEL_SIZE, True).to(self.device)
 
     def iteration(self, engine, batch):
         model = self.models[MODEL]
@@ -629,6 +645,9 @@ class TrainExperimentDetector(TrainExperiment):
         w_kp1 = warp_points(kp1, homo12)
         w_kp2 = warp_points(kp2, homo21)
 
+        visible1 = get_visible_keypoints_mask(image1, w_kp2)
+        visible2 = get_visible_keypoints_mask(image2, w_kp1)
+
         det_loss = (det_loss1 + det_loss2) / 2
 
         return {
@@ -638,7 +657,10 @@ class TrainExperimentDetector(TrainExperiment):
             KP2: kp2,
 
             W_KP1: w_kp1,
-            W_KP2: w_kp2
+            W_KP2: w_kp2,
+
+            VISIBLE1: visible1,
+            VISIBLE2: visible2
         }
 
     def inference(self, engine, batch):
@@ -662,6 +684,9 @@ class TrainExperimentDetector(TrainExperiment):
         w_kp1 = warp_points(kp1, homo12)
         w_kp2 = warp_points(kp2, homo21)
 
+        visible1 = get_visible_keypoints_mask(image1, w_kp2)
+        visible2 = get_visible_keypoints_mask(image2, w_kp1)
+
         return {
             S_IMAGE1: batch[S_IMAGE1],
             S_IMAGE2: batch[S_IMAGE2],
@@ -670,7 +695,10 @@ class TrainExperimentDetector(TrainExperiment):
             KP2: kp2,
 
             W_KP1: w_kp1,
-            W_KP2: w_kp2
+            W_KP2: w_kp2,
+
+            VISIBLE1: visible1,
+            VISIBLE2: visible2
         }
 
     def bind_events(self):
@@ -698,7 +726,8 @@ class TrainExperimentDetector(TrainExperiment):
             return x[LOSS]
 
         def l_rep_score(x):
-            return repeatability_score(x[KP1], x[W_KP2], x[KP2], cs.TOP_K, ms.DET_THRESH)[0]
+            return (repeatability_score(x[KP1], x[W_KP2], x[KP2], x[VISIBLE1], ms.DET_THRESH)[0] +
+                    repeatability_score(x[KP2], x[W_KP1], x[KP1], x[VISIBLE2], ms.DET_THRESH)[0]) / 2
 
         def l_collect_show(x):
             return x[S_IMAGE1][0], x[S_IMAGE2][0], x[KP1][0], x[W_KP2][0], x[KP2][0], None, None
@@ -753,7 +782,7 @@ class TrainExperimentDetector(TrainExperiment):
             show_engine.run(show_loader)
 
             plot_keypoints_and_descriptors(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW],
-                                           cs.TOP_K, ms.DET_THRESH)
+                                           ms.DET_THRESH)
 
     def analyze_inference(self):
         ds = self.get_dataset_settings()

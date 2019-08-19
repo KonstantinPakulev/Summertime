@@ -26,6 +26,8 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     if args.exp_id == 'train':
+        experiment = TrainExperiment(device, args.log_dir, args.checkpoint_dir)
+    elif args.exp_id == 'train_det':
         experiment = TrainExperimentDetector(device, args.log_dir, args.checkpoint_dir)
     elif args.exp_id == 'train_alter':
         experiment = TrainExperimentAlter(device, args.log_dir, args.checkpoint_dir)

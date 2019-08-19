@@ -354,6 +354,19 @@ def select_keypoints(score, thresh, k_size, top_k):
     return gt_score, keypoints
 
 
+def get_visible_keypoints_mask(image1, w_kp2):
+    """
+    :param image1: B x 1 x H x W
+    :param w_kp2: B x N x 2
+    """
+    hz = w_kp2[:, :, 0] >= 0
+    wz = w_kp2[:, :, 1] >= 0
+    hh = w_kp2[:, :, 0] < image1.size(2)
+    ww = w_kp2[:, :, 1] < image1.size(3)
+    mask = hz * wz * hh * ww
+    return mask.float()
+
+
 def select_keypoints_score(score, thresh, k_size, top_k):
     """
     :param score: B x 1 x H x W

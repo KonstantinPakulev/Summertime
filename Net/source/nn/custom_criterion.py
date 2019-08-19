@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from Net.source.utils.image_utils import (create_desc_coordinates_grid,
                                           warp_points,
