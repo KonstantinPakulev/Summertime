@@ -15,6 +15,11 @@ def make_vgg_block(in_channels, out_channels):
     return conv
 
 
+"""
+VGG Net
+"""
+
+
 def make_vgg_ms_block(in_channels, out_channels, factor):
     conv = make_vgg_block(in_channels, out_channels)
 
@@ -41,6 +46,11 @@ def make_vgg_ms_descriptor(in_channels, out_channels, descriptor_size):
     return nn.Sequential(*conv)
 
 
+"""
+RF Detector
+"""
+
+
 def make_rf_ms_block(in_channels, out_channels):
     conv = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)]
     conv += [nn.InstanceNorm2d(out_channels, affine=True)]
@@ -52,6 +62,11 @@ def make_rf_ms_block(in_channels, out_channels):
     return nn.Sequential(*conv), nn.Sequential(*score)
 
 
+"""
+SDC Net
+"""
+
+
 def make_sdc_ms_block(in_channels, out_channels, dilation):
     conv = [nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2 + 2 * (dilation - 1), dilation=dilation)]
     conv += [nn.ELU()]
@@ -59,7 +74,14 @@ def make_sdc_ms_block(in_channels, out_channels, dilation):
     return nn.Sequential(*conv)
 
 
-def make_vgg_descriptor(descriptor_size):
+def make_sdc_score_block(in_channels):
+    score = [nn.Conv2d(in_channels, 1, kernel_size=1, padding=0)]
+    score += [nn.BatchNorm2d(1)]
+
+    return nn.Sequential(*score)
+
+
+def make_sdc_descriptor(descriptor_size):
     layers = [nn.MaxPool2d(kernel_size=2, stride=2)]
 
     layers += make_vgg_block(64, 64)
@@ -126,6 +148,22 @@ def multi_scale_softmax(multi_scale_scores, strength=100.0):
     softmax = exp / sum_exp
 
     score = torch.sum(multi_scale_scores * softmax, dim=1, keepdim=True)
+
+    return score
+
+
+def multi_scale_nms_softmax(multi_scale_scores):
+    exp_score = torch.exp(multi_scale_scores)
+    exp_sum = F.conv2d(exp_score, weight=torch.ones((exp_score.size(1), exp_score.size(1), 3, 3)), padding=1) + 1e-8
+
+    score = exp_score / exp_sum
+
+    exp_score = torch.exp(score)
+    exp_sum = exp_score.sum(dim=1, keepdim=True) + 1e-8
+
+    score = exp_score / exp_sum
+
+    score = torch.sum(multi_scale_scores * score, dim=1, keepdim=True)
 
     return score
 

@@ -2,7 +2,7 @@ import os
 from easydict import EasyDict
 
 import torch
-from Net.source.nn.model import NetVGG
+from Net.source.nn.model import NetVGG, NetVGGDebug
 from Net.source.nn.criterion import MSELoss, HardQuadTripletSOSRLoss
 from torch.optim import Adam
 
@@ -34,7 +34,7 @@ from Net.source.utils.image_utils import select_keypoints, warp_points
 from Net.source.utils.model_utils import sample_descriptors
 from Net.source.utils.ignite_utils import PeriodicMetric, AveragePeriodicMetric, AveragePeriodicListMetric, \
     CollectMetric
-from Net.source.utils.eval_utils import repeatability_score, match_score, plot_keypoints
+from Net.source.utils.eval_utils import repeatability_score, match_score, plot_keypoints_and_descriptors
 
 """
 Dataset and loader keys
@@ -72,6 +72,7 @@ Endpoint keys
 LOSS = 'loss'
 DET_LOSS = 'det_loss'
 DES_LOSS = 'des_loss'
+
 KP1 = 'kp1'
 KP2 = 'kp2'
 W_KP1 = 'w_kp1'
@@ -81,10 +82,10 @@ KP2_DESC = 'kp2_desc'
 DESC1 = 'desc1'
 DESC2 = 'desc2'
 
+DEBUG1 = 'debug1'
+DEBUG2 = 'debug2'
 SCORE1 = 'score1'
 SCORE2 = 'score2'
-KP1_SCORE = 'kp_score1'
-KP2_SCORE = 'kp_score2'
 
 """
 Metric keys
@@ -147,10 +148,10 @@ class TrainExperiment(BaseExperiment):
 
         cs.DES_LAMBDA = 1
         cs.MARGIN = 1
-        cs.NUM_NEG = 64
-        cs.SOS_NEG = 16
+        cs.NUM_NEG = 4
+        cs.SOS_NEG = 8
 
-        cs.DET_LAMBDA = 100000
+        cs.DET_LAMBDA = 50
 
         cs.NMS_THRESH = 0.0
         cs.NMS_K_SIZE = 5
@@ -506,8 +507,8 @@ class TrainExperiment(BaseExperiment):
         def on_se(engine):
             show_engine.run(show_loader)
 
-            plot_keypoints(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW],
-                           cs.TOP_K, ms.DET_THRESH)
+            plot_keypoints_and_descriptors(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW],
+                                           cs.TOP_K, ms.DET_THRESH)
 
     def run_experiment(self):
         es = self.get_experiment_settings()
@@ -519,7 +520,6 @@ class TrainExperiment(BaseExperiment):
 
     def stop_logging(self):
         self.writer.close()
-
 
     def analyze_inference(self):
         ds = self.get_dataset_settings()
@@ -559,8 +559,8 @@ class TrainExperiment(BaseExperiment):
             score1, desc1 = model(image1)
             score2, desc2 = model(image2)
 
-            kp1_score, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
-            kp2_score, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+            _, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+            _, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
 
             kp1_desc = sample_descriptors(desc1, kp1, ms.GRID_SIZE)
             kp2_desc = sample_descriptors(desc2, kp2, ms.GRID_SIZE)
@@ -572,14 +572,11 @@ class TrainExperiment(BaseExperiment):
                 S_IMAGE1: batch[S_IMAGE1],
                 S_IMAGE2: batch[S_IMAGE2],
 
-                SCORE1: score1,
-                SCORE2: score2,
-
-                KP1_SCORE: kp1_score,
-                KP2_SCORE: kp2_score,
-
                 HOMO12: homo12,
                 HOMO21: homo21,
+
+                SCORE1: score1,
+                SCORE2: score2,
 
                 DESC1: desc1,
                 DESC2: desc2,
@@ -596,3 +593,229 @@ class TrainExperiment(BaseExperiment):
 
         return output
 
+
+class TrainExperimentDetector(TrainExperiment):
+
+    def get_checkpoint_settings(self):
+        cs = EasyDict()
+
+        cs.SAVE_INTERVAL = 100
+        cs.N_SAVED = 3
+
+        return cs
+
+    def init_models(self):
+        ms = self.get_model_settings()
+        self.models[MODEL] = NetVGGDebug(ms.GRID_SIZE, ms.DESCRIPTOR_SIZE).to(self.device)
+
+    def iteration(self, engine, batch):
+        model = self.models[MODEL]
+
+        mse_criterion = self.criterions[DET_CRITERION]
+
+        image1, image2, homo12, homo21 = (
+            batch[IMAGE1].to(self.device),
+            batch[IMAGE2].to(self.device),
+            batch[HOMO12].to(self.device),
+            batch[HOMO21].to(self.device)
+        )
+
+        score1, _, _ = model(image1)
+        score2, _, _ = model(image2)
+
+        det_loss1, kp1 = mse_criterion(score1, score2, homo12)
+        det_loss2, kp2 = mse_criterion(score2, score1, homo21)
+
+        w_kp1 = warp_points(kp1, homo12)
+        w_kp2 = warp_points(kp2, homo21)
+
+        det_loss = (det_loss1 + det_loss2) / 2
+
+        return {
+            LOSS: det_loss,
+
+            KP1: kp1,
+            KP2: kp2,
+
+            W_KP1: w_kp1,
+            W_KP2: w_kp2
+        }
+
+    def inference(self, engine, batch):
+        model = self.models[MODEL]
+
+        ls = self.get_criterion_settings()
+
+        image1, image2, homo12, homo21 = (
+            batch[IMAGE1].to(self.device),
+            batch[IMAGE2].to(self.device),
+            batch[HOMO12].to(self.device),
+            batch[HOMO21].to(self.device)
+        )
+
+        score1, _, _ = model(image1)
+        score2, _, _ = model(image2)
+
+        _, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+        _, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+
+        w_kp1 = warp_points(kp1, homo12)
+        w_kp2 = warp_points(kp2, homo21)
+
+        return {
+            S_IMAGE1: batch[S_IMAGE1],
+            S_IMAGE2: batch[S_IMAGE2],
+
+            KP1: kp1,
+            KP2: kp2,
+
+            W_KP1: w_kp1,
+            W_KP2: w_kp2
+        }
+
+    def bind_events(self):
+        train_engine = self.engines[TRAIN_ENGINE]
+        val_engine = self.engines[VAL_ENGINE]
+        show_engine = self.engines[SHOW_ENGINE]
+
+        if self.checkpoint_dir is not None:
+            check_s = self.get_checkpoint_settings()
+
+            checkpoint_saver = ModelCheckpoint(self.checkpoint_dir, CHECKPOINT_PREFIX,
+                                               save_interval=check_s.SAVE_INTERVAL, n_saved=check_s.N_SAVED)
+
+            model = self.models[MODEL]
+            optimizers = self.optimizers[OPTIMIZER]
+
+            train_engine.add_event_handler(Events.ITERATION_COMPLETED, checkpoint_saver, {MODEL: model,
+                                                                                          OPTIMIZER: optimizers})
+
+        ls = self.get_log_settings()
+        cs = self.get_criterion_settings()
+        ms = self.get_metric_settings()
+
+        def l_loss(x):
+            return x[LOSS]
+
+        def l_rep_score(x):
+            return repeatability_score(x[KP1], x[W_KP2], x[KP2], cs.TOP_K, ms.DET_THRESH)[0]
+
+        def l_collect_show(x):
+            return x[S_IMAGE1][0], x[S_IMAGE2][0], x[KP1][0], x[W_KP2][0], x[KP2][0], None, None
+
+        # Train metrics
+        AveragePeriodicMetric(l_loss, ls.TRAIN.LOSS_LOG_INTERVAL).attach(train_engine, LOSS)
+        PeriodicMetric(l_rep_score, ls.TRAIN.METRIC_LOG_INTERVAL).attach(train_engine, REP_SCORE)
+
+        # Val metrics
+        AveragePeriodicMetric(l_loss).attach(val_engine, LOSS)
+        AveragePeriodicMetric(l_rep_score).attach(val_engine, REP_SCORE)
+
+        # Show metrics
+        CollectMetric(l_collect_show).attach(show_engine, SHOW)
+
+        tle = CustomPeriodicEvent(n_iterations=ls.TRAIN.LOSS_LOG_INTERVAL)
+        tme = CustomPeriodicEvent(n_iterations=ls.TRAIN.METRIC_LOG_INTERVAL)
+        ve = CustomPeriodicEvent(n_iterations=ls.VAL.LOG_INTERVAL)
+        se = CustomPeriodicEvent(n_epochs=ls.SHOW.LOG_INTERVAL)
+
+        tle.attach(train_engine)
+        tme.attach(train_engine)
+        ve.attach(train_engine)
+        se.attach(train_engine)
+
+        val_loader = self.loaders[VAL_LOADER]
+        show_loader = self.loaders[SHOW_LOADER]
+
+        def output_losses(writer, data_engine, state_engine, tag):
+            writer.add_scalar(f"{tag}/{LOSS}", data_engine.state.metrics[LOSS], state_engine.state.iteration)
+
+        def output_metrics(writer, data_engine, state_engine, tag):
+            writer.add_scalar(f"{tag}/{REP_SCORE}", data_engine.state.metrics[REP_SCORE], state_engine.state.iteration)
+
+        @train_engine.on(tle._periodic_event_completed)
+        def on_tle(engine):
+            output_losses(self.writer, train_engine, train_engine, "train")
+
+        @train_engine.on(tme._periodic_event_completed)
+        def on_tme(engine):
+            output_metrics(self.writer, train_engine, train_engine, "train")
+
+        @train_engine.on(ve._periodic_event_completed)
+        def on_ve(engine):
+            val_engine.run(val_loader)
+
+            output_losses(self.writer, val_engine, train_engine, "val")
+            output_metrics(self.writer, val_engine, train_engine, "val")
+
+        @train_engine.on(se._periodic_event_completed)
+        def on_se(engine):
+            show_engine.run(show_loader)
+
+            plot_keypoints_and_descriptors(self.writer, train_engine.state.epoch, show_engine.state.metrics[SHOW],
+                                           cs.TOP_K, ms.DET_THRESH)
+
+    def analyze_inference(self):
+        ds = self.get_dataset_settings()
+        ls = self.get_loaders_settings()
+
+        analyze_transform = [Grayscale(),
+                             Normalize(mean=ds.DATASET_MEAN, std=ds.DATASET_STD),
+                             Rescale((960, 1280)),
+                             Rescale((320, 640)),
+                             ToTensor()]
+
+        analyze_loader = DataLoader(
+            TrainExperiment.get_dataset(os.path.join("../", ds.DATASET_ROOT),
+                                        ds.ANALYZE_CSV, analyze_transform, True),
+            batch_size=ls.ANALYZE_BATCH_SIZE)
+
+        self.init_models()
+
+        self.load_checkpoint()
+
+        self.models[MODEL].eval()
+
+        with torch.no_grad():
+            batch = analyze_loader.__iter__().__next__()
+            model = self.models[MODEL]
+
+            ls = self.get_criterion_settings()
+
+            image1, image2, homo12, homo21 = (
+                batch[IMAGE1].to(self.device),
+                batch[IMAGE2].to(self.device),
+                batch[HOMO12].to(self.device),
+                batch[HOMO21].to(self.device)
+            )
+
+            score1, _, debug1 = model(image1)
+            score2, _, debug2 = model(image2)
+
+            _, kp1 = select_keypoints(score1, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+            _, kp2 = select_keypoints(score2, ls.NMS_THRESH, ls.NMS_K_SIZE, ls.TOP_K)
+
+            w_kp1 = warp_points(kp1, homo12)
+            w_kp2 = warp_points(kp2, homo21)
+
+            output = {
+                S_IMAGE1: batch[S_IMAGE1],
+                S_IMAGE2: batch[S_IMAGE2],
+
+                DEBUG1: debug1,
+                DEBUG2: debug2,
+
+                HOMO12: homo12,
+                HOMO21: homo21,
+
+                SCORE1: score1,
+                SCORE2: score2,
+
+                KP1: kp1,
+                KP2: kp2,
+
+                W_KP1: w_kp1,
+                W_KP2: w_kp2,
+            }
+
+        return output
