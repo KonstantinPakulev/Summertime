@@ -10,6 +10,7 @@
       <w>logits</w>
       <w>softmax</w>
       <w>sosr</w>
+      <w>tedrf</w>
     </words>
   </dictionary>
 </component>

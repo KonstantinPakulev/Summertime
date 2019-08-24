@@ -108,23 +108,6 @@ Tensor functions
 """
 
 
-def space_to_depth(tensor, grid_size):
-    """
-    :param tensor: N x C x H x W
-    :param grid_size: int
-    """
-    n, c, h, w = tensor.size()
-
-    hr = h // grid_size
-    wr = w // grid_size
-
-    x = tensor.view(n, c, hr, grid_size, wr, grid_size)
-    x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # N x grid_size x grid_size x C x Hr x Wr
-    x = x.view(n, c * (grid_size ** 2), hr, wr)  # N x C * grid_size^2 x Hr x Wr
-
-    return x
-
-
 def multi_scale_nms(multi_scale_scores, k_size, strength=3.0):
     padding = k_size // 2
 
@@ -150,23 +133,6 @@ def multi_scale_softmax(multi_scale_scores, strength=100.0):
     return score
 
 
-def multi_scale_nms_softmax(multi_scale_scores, ks):
-    exp_score = torch.exp(multi_scale_scores)
-    weight = torch.ones((exp_score.size(1), exp_score.size(1), ks, ks)).to(multi_scale_scores.device)
-    exp_sum = F.conv2d(exp_score, weight=weight, padding=ks // 2) + 1e-8
-
-    score_nms = exp_score / exp_sum
-
-    exp_score = torch.exp(score_nms)
-    exp_sum = exp_score.sum(dim=1, keepdim=True) + 1e-8
-
-    ms_score = exp_score / exp_sum
-
-    ms_score = torch.sum(multi_scale_scores * ms_score, dim=1, keepdim=True)
-
-    return ms_score
-
-
 def sample_descriptors(desc, kp, grid_size):
     """
     :param desc: B x C x H x W
@@ -181,3 +147,20 @@ def sample_descriptors(desc, kp, grid_size):
     kp_grid[:, :, :, 1] = kp_grid[:, :, :, 1] / (h - 1) * 2 - 1
 
     return F.normalize(F.grid_sample(desc, kp_grid).squeeze(2)).permute(0, 2, 1)
+
+
+def space_to_depth(tensor, grid_size):
+    """
+    :param tensor: N x C x H x W
+    :param grid_size: int
+    """
+    n, c, h, w = tensor.size()
+
+    hr = h // grid_size
+    wr = w // grid_size
+
+    x = tensor.view(n, c, hr, grid_size, wr, grid_size)
+    x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # N x grid_size x grid_size x C x Hr x Wr
+    x = x.view(n, c * (grid_size ** 2), hr, wr)  # N x C * grid_size^2 x Hr x Wr
+
+    return x

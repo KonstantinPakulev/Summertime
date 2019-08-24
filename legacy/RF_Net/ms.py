@@ -8,7 +8,8 @@ import argparse
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
-module_path = os.path.abspath(os.path.join('..'))
+
+module_path = os.path.abspath(os.path.join('../..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
@@ -83,8 +84,7 @@ if __name__ == "__main__":
     )
     des = HardNetNeiMask(cfg.HARDNET.MARGIN, cfg.MODEL.COO_THRSH)
     model = RFNetSO(
-        det, des, cfg.LOSS.SCORE, cfg.LOSS.PAIR, cfg.PATCH.SIZE, cfg.TRAIN.TOPK
-    )
+        det, des, cfg.LOSS.SCORE, cfg.LOSS.PAIR, True, cfg.PATCH.SIZE, cfg.TRAIN.TOPK)
 
     print(f"{gct()} : to device")
     device = torch.device("cuda")

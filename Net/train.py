@@ -8,9 +8,16 @@ if module_path not in sys.path:
 
 import torch
 
-from Net.experiments.main_experiment import TrainExperiment
-from Net.experiments.custom_experiment import DebugTrainExperiment, TrainExperimentDetector, TrainExperimentAlter, TrainExperimentLoss
+from Net.experiments.base.config import DebugConfig
 
+from Net.experiments.main_experiment import TE, TED
+from Net.experiments.rf_experiments import TEDRF, TEDDiffRF
+from Net.experiments.main_alter_experiment import TERSOSR, TENoSOSR, TERFOSNoSOSR, TECRFOSNoSOSR
+
+class DTE(TECRFOSNoSOSR):
+
+    def init_config(self):
+        self.config = DebugConfig()
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -21,19 +28,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    experiment = None
-
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    if args.exp_id == 'train':
-        experiment = TrainExperiment(device, args.log_dir, args.checkpoint_dir)
-    elif args.exp_id == 'train_det':
-        experiment = TrainExperimentDetector(device, args.log_dir, args.checkpoint_dir)
-    elif args.exp_id == 'train_alter':
-        experiment = TrainExperimentAlter(device, args.log_dir, args.checkpoint_dir)
-    elif args.exp_id == 'train_loss':
-        experiment = TrainExperimentLoss(device, args.log_dir, args.checkpoint_dir)
-    else:
-        experiment = DebugTrainExperiment(device, args.log_dir, args.checkpoint_dir)
-
+    experiment = getattr(sys.modules[__name__], args.exp_id)(device, args.log_dir, args.checkpoint_dir)
     experiment.run()

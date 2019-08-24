@@ -45,20 +45,6 @@ def crop_image(image, rect):
     return image[top: bottom, left: right]
 
 
-def filter_border(image, radius=8):
-    """
-    :param image: N x C x H x W
-    :param radius: int
-    """
-    _, _, h, w = image.size()
-    r2 = radius * 2
-
-    mask = torch.ones((1, 1, h - r2, w - r2)).to(image.device)
-    mask = F.pad(input=mask, pad=[radius, radius, radius, radius, 0, 0, 0, 0])
-
-    return image * mask
-
-
 """
 Homography functions
 """
@@ -142,6 +128,18 @@ def create_desc_coordinates_grid(out, grid_size):
     """
     coo_grid = create_coordinates_grid(out)
     coo_grid = coo_grid * grid_size
+    coo_grid = coo_grid[:, :, :, [1, 0]]
+
+    return coo_grid
+
+
+def create_desc_center_coordinates_grid(out, grid_size):
+    """
+    :param out: B x C x H x W
+    :param grid_size: int
+    """
+    coo_grid = create_coordinates_grid(out)
+    coo_grid = coo_grid * grid_size + grid_size // 2
     coo_grid = coo_grid[:, :, :, [1, 0]]
 
     return coo_grid
@@ -295,6 +293,20 @@ Score processing functions
 """
 
 
+def filter_border(image, radius=4):
+    """
+    :param image: N x C x H x W
+    :param radius: int
+    """
+    _, _, h, w = image.size()
+    r2 = radius * 2
+
+    mask = torch.ones((1, 1, h - r2, w - r2)).to(image.device)
+    mask = F.pad(input=mask, pad=[radius, radius, radius, radius, 0, 0, 0, 0])
+
+    return image * mask
+
+
 def nms(score, thresh: float, k_size):
     """
     :param score: B x C x H x W
@@ -329,10 +341,10 @@ def nms(score, thresh: float, k_size):
     return score
 
 
-def select_keypoints(score, thresh, k_size, top_k):
+def select_gt_and_keypoints(score, nms_thresh, k_size, top_k):
     """
     :param score: B x 1 x H x W
-    :param thresh: float
+    :param nms_thresh: float
     :param k_size: int
     :param top_k: int
     :return B x 1 x H x W, B x N x 2
@@ -340,7 +352,7 @@ def select_keypoints(score, thresh, k_size, top_k):
     n, c, h, w = score.size()
 
     # Apply nms
-    score = nms(score, thresh, k_size)
+    score = nms(score, nms_thresh, k_size)
 
     # Extract maximum activation indices and convert them to keypoints
     score = score.view(n, c, -1)
@@ -354,31 +366,20 @@ def select_keypoints(score, thresh, k_size, top_k):
     return gt_score, keypoints
 
 
-def get_visible_keypoints_mask(image1, w_kp2):
-    """
-    :param image1: B x 1 x H x W
-    :param w_kp2: B x N x 2
-    """
-    hz = w_kp2[:, :, 0] >= 0
-    wz = w_kp2[:, :, 1] >= 0
-    hh = w_kp2[:, :, 0] < image1.size(2)
-    ww = w_kp2[:, :, 1] < image1.size(3)
-    mask = hz * wz * hh * ww
-    return mask.float()
-
-
-def select_keypoints_score(score, thresh, k_size, top_k):
+def select_score_and_keypoints(score, nms_thresh, k_size, top_k):
     """
     :param score: B x 1 x H x W
-    :param thresh: float
+    :param nms_thresh: float
     :param k_size: int
     :param top_k: int
     :return B x 1 x H x W, B x N x 2
     """
     n, c, h, w = score.size()
 
+    score = filter_border(score)
+
     # Apply nms
-    score = nms(score, thresh, k_size)
+    score = nms(score, nms_thresh, k_size)
 
     # Extract maximum activation indices and convert them to keypoints
     score = score.view(n, c, -1)
@@ -393,3 +394,15 @@ def select_keypoints_score(score, thresh, k_size, top_k):
     score = score.view(n, c, h, w)
 
     return score, keypoints
+
+
+def get_visible_keypoints_mask(image1, w_kp2):
+    """
+    :param image1: B x 1 x H x W
+    :param w_kp2: B x N x 2
+    """
+    return w_kp2[:, :, 0].ge(0) * \
+           w_kp2[:, :, 0].lt(image1.size(2)) * \
+           w_kp2[:, :, 1].ge(0) * \
+           w_kp2[:, :, 1].lt(image1.size(3))
+

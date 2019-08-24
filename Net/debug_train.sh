@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-exp_id="debug_train"
-log_dir="$(pwd)/runs/"${exp_id}
-checkpoint_dir="$(pwd)/checkpoints/"${exp_id}
+exp_id="DTE"
+log_dir="$(pwd)/runs/debug_train"
+checkpoint_dir="$(pwd)/checkpoints/debug_train"
 
 rm -rf "${log_dir}"
 rm -rf "${checkpoint_dir}"

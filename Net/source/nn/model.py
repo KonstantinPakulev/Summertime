@@ -78,13 +78,14 @@ class NetVGG(nn.Module):
         s9 = self.detector(x)
 
         multi_scale_scores = torch.cat((s1, s2, s3, s4, s5, s6, s7, s8, s9), dim=1)
-        score = multi_scale_nms(multi_scale_scores, self.nms_ks)
-        score = multi_scale_softmax(score)
+        nms_score = multi_scale_nms(multi_scale_scores, self.nms_ks)
+        score = multi_scale_softmax(nms_score)
 
         desc = self.descriptor(x)
         desc = F.normalize(desc)
 
         if self.debug_mode:
-            return score, desc, {'mss': multi_scale_scores}
+            return score, desc, {'mss': multi_scale_scores,
+                                 'nms': nms_score}
         else:
             return score, desc

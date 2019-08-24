@@ -58,12 +58,21 @@ Utils for CV
 """
 
 
-def torch2cv(img):
+def torch2cv(img, normalize=False, to_rgb=False):
     """
     :param img: C x H x W
+    :param normalize: normalize image by max value
+    :param to_rgb: convert image to rgb from grayscale
     """
+    if normalize:
+        img = img / img.max()
+
     img = img.permute(1, 2, 0).cpu().detach().numpy()
     img = (img * 255).astype(np.uint8)
+
+    if to_rgb:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
     return img
 
 
@@ -97,13 +106,13 @@ def draw_cv_matches(img_cv1, img_cv2, kp1, kp2):
     """
     :param img_cv1: H x W x C
     :param img_cv2: H x W x C
-    :param kp1: N x 2
-    :param kp2: N x 2
+    :param kp1: N1 x 2
+    :param kp2: N2 x 2
     """
     kp_cv1 = to_cv2_keypoint(kp1)
     kp_cv2 = to_cv2_keypoint(kp2)
 
-    return cv2.drawMatches(img_cv1, kp_cv1, img_cv2, kp_cv2, to_cv2_dmatch(kp_cv1), None)
+    return cv2.drawMatches(img_cv1, kp_cv1, img_cv2, kp_cv2, to_cv2_dmatch(kp1), None)
 
 
 def to_cv2_dmatch(kp):
