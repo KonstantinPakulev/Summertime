@@ -17,4 +17,4 @@ echo "Checkpoints dir:: ${checkpoint_dir}"
 stdout=${log_dir}"/out.out"
 stderr=${log_dir}"/out.err"
 
-bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/train.py --exp_id="${exp_id}" --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}"
+bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/run.py --exp_id="${exp_id}" --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}"

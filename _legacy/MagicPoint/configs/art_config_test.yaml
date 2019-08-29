@@ -1,0 +1,20 @@
+data:
+    name: 'synthetic_shapes'
+    data_path: '../data'
+    primitives: 'all'
+    truncate: {draw_ellipses: 0.3, draw_stripes: 0.2, gaussian_noise: 0.1}
+    suffix: 'train'
+model:
+    name: 'magic_point'
+    batch_size: 1
+    grid_size: 8
+    detection_threshold: 0.5
+    nms: 4
+    iou_threshold: 0.1
+    top_k: 200
+experiment:
+    name: 'MagicPoint'
+    seed: 12
+    checkpoints_path: '../../common/checkpoints'
+    load_checkpoints: true
+    load_checkpoint_iter: 1500
