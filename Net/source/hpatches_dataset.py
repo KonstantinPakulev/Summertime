@@ -1,15 +1,11 @@
 import os
+import cv2
 import numpy as np
-from numpy import random
 import pandas as pd
-from skimage import io, color
+from skimage import io
+from Net.source.homography import sample_homography
 
-import torch
 from torch.utils.data import Dataset
-from torchvision import transforms
-import torchvision.transforms.functional as F
-
-from Net.source.utils.image_utils import resize_homography, crop_homography
 
 # Batch variables
 IMAGE1 = 'image1'
@@ -49,8 +45,20 @@ class HPatchesDataset(Dataset):
         image1 = io.imread(image1_path)
         image2 = io.imread(image2_path)
 
-        homo12 = np.asmatrix(self.annotations.iloc[id, 3:].values).astype(np.float).reshape(3, 3)
-        homo21 = homo12.I
+        choice = np.random.choice(3)
+        if choice == 0:
+            homo12 = np.asmatrix(self.annotations.iloc[id, 3:].values).astype(np.float).reshape(3, 3)
+            homo21 = homo12.I
+        elif choice == 1:
+            homo12 = np.asmatrix(sample_homography(image1.shape[1::-1]))
+            homo21 = homo12.I
+
+            image2 = cv2.warpPerspective(image1, homo12, image1.shape[1::-1])
+        else:
+            homo21 = np.asmatrix(sample_homography(image2.shape[1::-1]))
+            homo12 = homo21.I
+
+            image1 = cv2.warpPerspective(image2, homo21, image2.shape[1::-1])
 
         item = {IMAGE1: image1, IMAGE2: image2, HOMO12: homo12, HOMO21: homo21}
 
@@ -60,112 +68,5 @@ class HPatchesDataset(Dataset):
 
         if self.item_transforms:
             item = self.item_transforms(item)
-
-        return item
-
-
-class PhotometricAugmentation(object):
-
-    def __init__(self, brightness, contrast):
-        self.brightness = brightness
-        self.contrast = contrast
-
-        if brightness is not None:
-            self.image_transforms = [transforms.ToPILImage(),
-                                     transforms.ColorJitter(brightness=brightness, contrast=contrast),
-                                     transforms.Grayscale()]
-        else:
-            self.image_transforms = [transforms.ToPILImage(),
-                                     transforms.Grayscale()]
-
-        self.image_transforms = transforms.Compose(self.image_transforms)
-
-    def __call__(self, item):
-        item[IMAGE1] = self.image_transforms(item[IMAGE1])
-        item[IMAGE2] = self.image_transforms(item[IMAGE2])
-
-        if S_IMAGE1 in item:
-            item[S_IMAGE1] = F.to_pil_image(item[S_IMAGE1])
-            item[S_IMAGE2] = F.to_pil_image(item[S_IMAGE2])
-
-        return item
-
-
-class ResizeItem(object):
-
-    def __init__(self, size):
-        self.size = size
-
-    def __call__(self, item):
-
-        ratio1 = (self.size[1] / item[IMAGE1].size[0], self.size[0] / item[IMAGE1].size[1])
-        ratio2 = (self.size[1] / item[IMAGE2].size[0], self.size[0] / item[IMAGE2].size[1])
-
-        item[HOMO12] = resize_homography(item[HOMO12], ratio1, ratio2)
-        item[HOMO21] = resize_homography(item[HOMO21], ratio2, ratio1)
-
-        item[IMAGE1] = F.resize(item[IMAGE1], self.size)
-        item[IMAGE2] = F.resize(item[IMAGE2], self.size)
-
-        if S_IMAGE1 in item:
-            item[S_IMAGE1] = F.resize(item[S_IMAGE1], self.size)
-            item[S_IMAGE2] = F.resize(item[S_IMAGE2], self.size)
-
-        return item
-
-
-class CropItem(object):
-
-    def __init__(self, size):
-        self.size = size
-
-    def get_params(self, image):
-        w, h = image.size
-
-        i = random.randint(0, h - self.size[0])
-        j = random.randint(0, w - self.size[1])
-
-        rect = (i, i + self.size[0], j, j + self.size[1])
-
-        return i, j, rect
-
-
-    def __call__(self, item):
-
-        i1, j1, rect1 = self.get_params(item[IMAGE1])
-        i2, j2, rect2 = self.get_params(item[IMAGE2])
-
-        item[HOMO12] = crop_homography(item[HOMO12], rect1=rect1)
-        item[HOMO12] = crop_homography(item[HOMO12], rect2=rect2)
-
-        item[HOMO21] = crop_homography(item[HOMO21], rect2=rect1)
-        item[HOMO21] = crop_homography(item[HOMO21], rect1=rect2)
-
-        item[IMAGE1] = F.crop(item[IMAGE1], i1, j1, self.size[0], self.size[1])
-        item[IMAGE2] = F.crop(item[IMAGE2], i2, j2, self.size[0], self.size[1])
-
-        return item
-
-
-class FinishAugmentation(object):
-
-    def __init__(self, mean, std):
-        if mean is not None:
-            self.image_transforms = [transforms.ToTensor(),
-                                     transforms.Normalize([mean], [std])]
-        else:
-            self.image_transforms = [transforms.ToTensor()]
-        self.image_transforms = transforms.Compose(self.image_transforms)
-
-    def __call__(self, item):
-        item[IMAGE1] = self.image_transforms(item[IMAGE1])
-        item[IMAGE2] = self.image_transforms(item[IMAGE2])
-
-        item[HOMO12] = torch.from_numpy(np.asarray(item[HOMO12])).float()
-        item[HOMO21] = torch.from_numpy(np.asarray(item[HOMO21])).float()
-
-        if S_IMAGE1 in item:
-            item[S_IMAGE1] = F.to_tensor(item[S_IMAGE1])
-            item[S_IMAGE2] = F.to_tensor(item[S_IMAGE2])
 
         return item

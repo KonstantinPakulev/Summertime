@@ -6,10 +6,6 @@ from Net.experiments.base import Loop
 
 from Net.source.hpatches_dataset import (
     HPatchesDataset,
-    PhotometricAugmentation,
-    ResizeItem,
-    CropItem,
-    FinishAugmentation,
 
     IMAGE1,
     IMAGE2,
@@ -17,6 +13,14 @@ from Net.source.hpatches_dataset import (
     HOMO21,
     S_IMAGE1,
     S_IMAGE2
+)
+from Net.source.transforms import (
+    ToPILImage,
+    ColorJitter,
+    GrayScale,
+    Resize,
+    RandomCrop,
+    ToTensor
 )
 
 from Net.source.utils.model_utils import sample_descriptors
@@ -107,11 +111,14 @@ Loops
 class TrainLoop(Loop):
 
     def get_dataset(self, dataset_config):
-        train_transform = [PhotometricAugmentation(brightness=None, contrast=None),
-                           ResizeItem((960, 1280)),
-                           CropItem((720, 960)),
-                           ResizeItem((dataset_config.HEIGHT, dataset_config.WIDTH)),
-                           FinishAugmentation(None, None)]
+        train_transform = [ToPILImage(),
+                           ColorJitter(brightness=dataset_config.BRIGHTNESS_CHANGE,
+                                       contrast=dataset_config.CONTRAST_CHANGE),
+                           GrayScale(),
+                           Resize((960, 1280)),
+                           RandomCrop((720, 960)),
+                           Resize((dataset_config.HEIGHT, dataset_config.WIDTH)),
+                           ToTensor()]
 
         dataset = HPatchesDataset(dataset_config.DATASET_ROOT,
                                   dataset_config.CSV,
@@ -232,10 +239,11 @@ class TrainLoop(Loop):
 class ValLoop(TrainLoop):
 
     def get_dataset(self, dataset_config):
-        val_transform = [PhotometricAugmentation(brightness=None, contrast=None),
-                         ResizeItem((960, 1280)),
-                         ResizeItem((dataset_config.HEIGHT, dataset_config.WIDTH)),
-                         FinishAugmentation(None, None)]
+        val_transform = [ToPILImage(),
+                         GrayScale(),
+                         Resize((960, 1280)),
+                         Resize((dataset_config.HEIGHT, dataset_config.WIDTH)),
+                         ToTensor()]
 
         dataset = HPatchesDataset(dataset_config.DATASET_ROOT,
                                   dataset_config.CSV,

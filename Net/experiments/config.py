@@ -10,11 +10,11 @@ class TrainDatasetConfig(Config):
     def __init__(self):
         super().__init__()
         self.config.DATASET_ROOT = "../data/hpatch_v_sequence"
-        self.config.DATASET_MEAN = 0.4230204841414801
-        self.config.DATASET_STD = 0.25000138349993173
 
     def get(self):
         self.config.CSV = "train.csv"
+        self.config.BRIGHTNESS_CHANGE = 0.1
+        self.config.CONTRAST_CHANGE = 0.1
         self.config.HEIGHT = 240
         self.config.WIDTH = 320
         self.config.INCLUDE_SOURCES = False
@@ -56,8 +56,6 @@ class AnalyzeDatasetConfig(Config):
     def __init__(self):
         super().__init__()
         self.config.DATASET_ROOT = "../../data/hpatch_v_sequence"
-        self.config.DATASET_MEAN = 0.4230204841414801
-        self.config.DATASET_STD = 0.25000138349993173
 
     def get(self):
         self.config.CSV = "analyze.csv"

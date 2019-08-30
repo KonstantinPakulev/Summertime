@@ -1,7 +1,7 @@
 from Net.experiments.loop import *
 from Net.experiments.config import MainConfig
 from Net._legacy.experiments.metric_binder import TrainMetricBinder, TestMetricBinder
-from Net.source.hpatches_dataset_old import (
+from Net._legacy.source.hpatches_dataset_old import (
     HPatchesDatasetOld,
     GrayscaleOld,
     NormalizeOld,
