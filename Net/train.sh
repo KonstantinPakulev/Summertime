@@ -1,20 +1,18 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-exp_id=${1}
-exp_name=${2}
-log_dir="$(pwd)/runs/"${exp_name}
-checkpoint_dir="$(pwd)/checkpoints/"${exp_name}
+model_config_path="configs/model.yaml"
+mode_config_path="configs/train.yaml"
 
-rm -rf "${log_dir}"
-rm -rf "${checkpoint_dir}"
+model_name="NetVGG"
+model_version='v4'
 
-mkdir "${log_dir}"
-mkdir "${checkpoint_dir}"
+mode="train"
 
-echo "Log dir: ${log_dir}"
-echo "Checkpoints dir:: ${checkpoint_dir}"
+gpu=0
+#gpu=1
+#gpu=2
 
-stdout=${log_dir}"/out.out"
-stderr=${log_dir}"/out.err"
+rm "nohup.out"
 
-bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/run.py --exp_id="${exp_id}" --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}"
+nohup python3 ~/personal/Summertime/Net/run.py --model_config_path="${model_config_path}" --mode_config_path="${mode_config_path}" \
+ --model_name="${model_name}" --model_version="${model_version}" --mode="${mode}" --gpu="${gpu}"&

@@ -12,7 +12,7 @@ from torchvision import transforms
 from ignite.engine import Engine, Events
 
 from legacy.exp_env.analyze_config import cfg as cfg_exp
-from Net._legacy.source.hpatches_dataset_old import (
+from _legacy.Net_legacy.source.hpatches_dataset_old import (
     HPatchesDatasetOld,
     GrayscaleOld,
     NormalizeOld,

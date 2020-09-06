@@ -25,6 +25,7 @@
           <option value="easydict.EasyDict.DATASET_STD" />
           <option value="easydict.EasyDict.*" />
           <option value="int.clamp" />
+          <option value="Net.source.experiments.TrainExperiment.val_loop" />
         </list>
       </option>
     </inspection_tool>

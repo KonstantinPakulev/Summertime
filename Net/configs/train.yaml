@@ -1,0 +1,86 @@
+model:
+  NetVGG:
+    nms_kernel_size: 3
+    top_k: 256
+
+dataset:
+  train:
+    megadepth:
+      dataset_root: "/home/konstantin/datasets/MegaDepthDataset"
+      scene_info_root: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo"
+      csv_path: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo/train_megadepth.csv"
+      height: 240
+      width: 320
+      sources: False
+
+  val:
+    megadepth:
+      dataset_root: "/home/konstantin/datasets/MegaDepthDataset"
+      scene_info_root: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo"
+      csv_path: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo/val_megadepth.csv"
+      height: 240
+      width: 320
+      sources: False
+
+  visualize:
+    megadepth:
+      dataset_root: "/home/konstantin/datasets/MegaDepthDataset"
+      scene_info_root: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo"
+      csv_path: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo/visualize_megadepth.csv"
+      height: 480
+      width: 640
+      sources: True
+
+loader:
+  train:
+    batch_size: 16
+    num_samples: 64000
+#    num_samples:  8000
+#    num_samples:  160
+    shuffle: True
+    num_workers: 8
+
+  val:
+    batch_size: 16
+    num_samples: -1
+#    num_samples: 160
+    shuffle: False
+    num_workers: 8
+
+  visualize:
+    batch_size: 1
+    num_samples: 1
+    shuffle: False
+    num_workers: 0
+
+metric:
+  train:
+    loss_log_iter: 10
+    metric_log_iter: 50
+
+    px_thresh:
+      - 3.0
+  val:
+    log_iter: 4000
+#    log_iter: 10
+
+    px_thresh:
+      - 3.0
+
+  visualize:
+    log_epoch: 1
+
+    px_thresh:
+      - 3.0
+
+    collect_rate: 1
+
+experiment:
+  lr: 0.001
+  lr_decay: 0.4
+  lr_schedule:
+    - 13
+    - 26
+  num_epochs: 35
+  n_saved: 3
+  return_output: False

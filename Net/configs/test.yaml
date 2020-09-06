@@ -1,0 +1,75 @@
+model:
+  NetVGG:
+    input_channels: 1
+
+    nms_kernel_size: 3
+    top_k: 1024
+
+    checkpoint_name: "7_ems=0.2318166"
+
+    v1:
+      checkpoint_name: "7_ems=0.4181276"
+
+    v2:
+      checkpoint_name: "8_ems=0.447693"
+
+    v3:
+      checkpoint_name: "7_ems=0.408757"
+
+dataset:
+  test:
+    hpatches_view:
+      dataset_root: "/home/konstantin/datasets/hpatch_v_sequence"
+      csv_path: "/home/konstantin/datasets/hpatch_v_sequence/hpatch_view.csv"
+
+      height: 480
+      width: 640
+      sources: False
+
+    hpatches_illum:
+      dataset_root: "/home/konstantin/datasets/hpatch_i_sequence"
+      csv_path: "/home/konstantin/datasets/hpatch_i_sequence/hpatch_illum.csv"
+
+      height: 480
+      width: 640
+      sources: False
+
+    megadepth:
+      dataset_root: "/home/konstantin/datasets/MegaDepthDataset"
+      scene_info_root: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo"
+      csv_path: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo/test_megadepth.csv"
+
+      height: 480
+      width: 640
+
+      sources: False
+
+    aachen:
+      dataset_root: "/home/konstantin/datasets/Aachen-Day-Night"
+
+      height: 720
+      width: 960
+
+      sources: False
+
+loader:
+  test:
+    batch_size: 1
+    num_samples: -1
+#    num_samples: 10
+    shuffle: False
+    num_workers: 8
+
+metric:
+  test:
+    px_thresh:
+      - 1.0
+      - 3.0
+      - 5.0
+
+    r_err_thresh: 2.0
+    t_err_thresh: 10.0
+
+experiment:
+  num_epochs: 1
+  return_output: False

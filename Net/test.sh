@@ -1,16 +1,22 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-exp_id=${1}
-exp_name=${2}
-checkpoint_iter=${3}
+model_config_path="configs/model.yaml"
+mode_config_path="configs/test.yaml"
 
-log_dir="$(pwd)/runs/"${exp_name}
-checkpoint_dir="$(pwd)/checkpoints/"${exp_name}
+model_name="NetVGG"
+model_version='v1'
 
-stdout=${log_dir}"/test_out.out"
-stderr=${log_dir}"/test_out.err"
+mode="test"
 
-rm -f "${stdout}"
-rm -f "${stderr}"
+dataset_name="megadepth"
+#dataset_name="aachen"
+#dataset_name="hpatches_view"
+#dataset_name="hpatches_illum"
+#dataset_name-="hpatches_view,hpatches_illum"
 
-bsub -q normal -J k.pakulev -gpu "num=1:mode=exclusive_process" -o "$stdout" -e "$stderr" python ~/Summertime/Net/run.py --exp_id="${exp_id}" --log_dir="${log_dir}" --checkpoint_dir="${checkpoint_dir}" --checkpoint_iter="${checkpoint_iter}"
+gpu=2
+
+rm "nohup.out"
+
+nohup python3 ~/personal/Summertime/Net/run.py --model_config_path="${model_config_path}" --mode_config_path="${mode_config_path}" \
+ --model_name="${model_name}" --model_version="${model_version}" --mode="${mode}" --dataset_name="${dataset_name}" --gpu="${gpu}"&

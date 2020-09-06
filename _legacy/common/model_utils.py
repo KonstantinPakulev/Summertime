@@ -272,6 +272,164 @@ def non_maximum_supression(probs, size, iou_threshold, top_k):
     return result
 
 
+# class MegaDepthHomoGroundTruthDataset(Dataset):
+#
+#     def __init__(self, dataset_root, scene_info_root,
+#                  mode, train_ratio,
+#                  item_transforms=None, sources=False):
+#         self.dataset_root = dataset_root
+#         self.sources = sources
+#
+#         self.dataset = []
+#         self.item_transforms = item_transforms
+#
+#         dataset_path = os.path.join(scene_info_root, "gt_matches.p")
+#
+#         if os.path.exists(dataset_path):
+#             with open(dataset_path, 'rb') as file:
+#                 self.dataset = pickle.load(file)
+#         else:
+#             scene_info_names = os.listdir(scene_info_root)
+#             scene_info_names = [name for name in scene_info_names if name.endswith(".npz")]
+#
+#             for scene_info_name in scene_info_names:
+#                 scene_info_path = os.path.join(scene_info_root, scene_info_name)
+#
+#                 if not os.path.exists(scene_info_path):
+#                     print("Scene path doesn't exist:", scene_info_path)
+#                     continue
+#
+#                 scene_info = np.load(scene_info_path, allow_pickle=True)
+#
+#                 overlap_matrix = scene_info['overlap_matrix']
+#                 scale_ratio_matrix = scene_info['scale_ratio_matrix']
+#
+#                 valid = np.logical_and(
+#                     np.logical_and(overlap_matrix >= MIN_OVERLAP_RATIO,
+#                                    overlap_matrix <= MAX_OVERLAP_RATIO),
+#                     scale_ratio_matrix <= MAX_SCALE_RATIO)
+#
+#                 pairs = np.vstack(np.where(valid))
+#
+#                 image_paths = scene_info['image_paths']
+#
+#                 points3D_id_to_2D = scene_info['points3D_id_to_2D']
+#                 points3D_id_to_ndepth = scene_info['points3D_id_to_ndepth']
+#
+#                 for pair_idx in range(pairs.shape[1]):
+#                     idx1 = pairs[0, pair_idx]
+#                     idx2 = pairs[1, pair_idx]
+#
+#                     matches = np.array(list(
+#                         points3D_id_to_2D[idx1].keys() &
+#                         points3D_id_to_2D[idx2].keys()
+#                     ))
+#
+#                     # Scale filtering
+#                     matches_nd1 = np.array([points3D_id_to_ndepth[idx1][match] for match in matches])
+#                     matches_nd2 = np.array([points3D_id_to_ndepth[idx2][match] for match in matches])
+#                     scale_ratio = np.maximum(matches_nd1 / matches_nd2, matches_nd2 / matches_nd1)
+#                     matches = matches[np.where(scale_ratio <= MAX_SCALE_RATIO)[0]]
+#
+#                     point2D1 = np.array([points3D_id_to_2D[idx1][m] for m in matches])
+#                     point2D2 = np.array([points3D_id_to_2D[idx2][m] for m in matches])
+#
+#                     homo12, _ = cv2.findHomography(point2D1, point2D2, cv2.RANSAC, 1, confidence=0.999)
+#                     homo21, _ = cv2.findHomography(point2D2, point2D1, cv2.RANSAC, 1, confidence=0.999)
+#
+#                     self.dataset.append([os.path.join(self.dataset_root, image_paths[idx1]),
+#                                          os.path.join(self.dataset_root, image_paths[idx2]),
+#                                          homo12, homo21])
+#
+#         with open(dataset_path, 'wb') as file:
+#             pickle.dump(self.dataset, file)
+#
+#         train_split = int(len(self.dataset) * train_ratio)
+#
+#         if mode == TRAIN:
+#             self.dataset = self.dataset[:train_split]
+#         elif mode == VAL:
+#             self.dataset = self.dataset[train_split:]
+#
+#     def __len__(self):
+#         return len(self.dataset)
+#
+#     def __getitem__(self, index):
+#         image1_path, image2_path, homo12, homo21 = self.dataset[index]
+#
+#         image1 = io.imread(image1_path)
+#         image2 = io.imread(image2_path)
+#
+#         item = {IMAGE1_NAME: image1_path.split("/")[-1],
+#                 IMAGE2_NAME: image2_path.split("/")[-1],
+#                 IMAGE1: image1, IMAGE2: image2,
+#                 HOMO12: homo12, HOMO21: homo21}
+#
+#         if self.sources:
+#             item[S_IMAGE1] = image1.copy()
+#             item[S_IMAGE2] = image2.copy()
+#
+#         if self.item_transforms is not None:
+#             item = self.item_transforms(item)
+#
+#         return item
+#
+#
+# class MegaDepthWarpV1GroundTruthDataset(Dataset):
+#
+#     def __init__(self, dataset_root, item_transforms=None, sources=False):
+#         self.dataset_root = dataset_root
+#         self.sources = sources
+#
+#         self.dataset = []
+#         self.item_transforms = item_transforms
+#
+#         dataset_path = os.path.join(dataset_root, "train_list/landscape/imgs_MD.p")
+#
+#         with open(dataset_path, 'rb') as file:
+#             self.dataset = pickle.load(file)
+#
+#     def __len__(self):
+#         return len(self.dataset)
+#
+#     def __getitem__(self, index):
+#         image1_path = os.path.join(self.dataset_root, self.dataset[index])
+#         image1 = io.imread(image1_path)
+#
+#         item = {IMAGE1_NAME: image1_path.split("/")[-1],
+#                 IMAGE2_NAME: image1_path.split("/")[-1] + "_warp",
+#                 IMAGE1: image1}
+#
+#         if self.item_transforms is not None:
+#             item = self.item_transforms(item)
+#
+#         return item
+# Mapping from 3D scene points to their 2D projection coordinates onto images
+# points3D_id_to_2D = scene_info['points3D_id_to_2D']
+# # Mapiing from 3D scene points to their estimated depth value on images
+# points3D_id_to_ndepth = scene_info['points3D_id_to_ndepth']
+
+# 3D points projected onto images idx1 and idx2
+# proj_idx1 = points3D_id_to_2D[idx1]
+# proj_idx2 = points3D_id_to_2D[idx2]
+#
+# # 3D points which have projections on both images
+# matches = np.array(list(proj_idx1.keys() & proj_idx2.keys()))
+#
+# # Depth of 3D points on images idx1 and idx2
+# depth_idx1 = points3D_id_to_ndepth[idx1]
+# depth_idx2 = points3D_id_to_ndepth[idx2]
+#
+# # Scale filtering
+# matches_nd1 = np.array([depth_idx1[match] for match in matches])
+# matches_nd2 = np.array([depth_idx2[match] for match in matches])
+# scale_ratio = np.maximum(matches_nd1 / matches_nd2, matches_nd2 / matches_nd1)
+#
+# matches = matches[np.where(scale_ratio <= MAX_SCALE_RATIO)[0]]
+#
+# points2D_idx1 = np.array([proj_idx1[match] for match in matches])
+# points2D_idx2 = np.array([proj_idx2[match] for match in matches])
+
 
 
 

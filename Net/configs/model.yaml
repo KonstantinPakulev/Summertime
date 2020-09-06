@@ -1,0 +1,46 @@
+model:
+  NetVGG:
+    grid_size: 8
+    descriptor_size: 64
+    input_channels: 3
+    batch_norm: True
+
+    #TODO. For MS also take into consideration the RF of the layer
+    soft_nms_kernel_size: 7
+
+criterion:
+  NetVGG:
+    det:
+      nms_kernel_size: 3
+      top_k: 256
+
+      gauss_kernel_size: 7
+      gauss_sigma: 0.5
+      lambda: 4.0
+
+    det_conf:
+      lambda: 1.0
+
+    desc:
+      margin: 1.0
+      lambda: 1.0
+
+    v1:
+      ep:
+        px_thresh: 3.0
+        lambda: 0.024
+
+      pose:
+        px_thresh: 3.0
+        lambda: 0.48
+        loss_version: '1'
+
+    v2_v4:
+      ep:
+        px_thresh: 3.0
+        lambda: 0.024
+
+    v3:
+      ep:
+        px_thresh: 3.0
+        lambda: 0.024

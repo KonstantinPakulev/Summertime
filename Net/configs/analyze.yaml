@@ -1,0 +1,62 @@
+model:
+  NetVGG:
+    nms_kernel_size: 3
+    top_k: 256
+
+    checkpoint_name: "7_ems=0.2318166"
+
+    v1:
+      checkpoint_name: "5_ems=0.3778786"
+
+    v2:
+      checkpoint_name: "7_ems=0.389194"
+
+    v3:
+      checkpoint_name: "1_emms=69.18538"
+
+dataset:
+
+  # TODO. How about creating a notebook (or a routine) with sampling and visualization of data before changing the csv
+
+  analyze:
+    hpatches_view:
+      dataset_root: "/home/konstantin/datasets/hpatch_v_sequence"
+      csv_path: "/home/konstantin/datasets/hpatch_v_sequence/batch.csv"
+
+      height: 480
+      width: 640
+
+      sources: True
+
+    megadepth:
+      dataset_root: "/home/konstantin/datasets/MegaDepthDataset"
+      scene_info_root: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo"
+      csv_path: "/home/konstantin/datasets/MegaDepthDataset/SceneInfo/analyze_megadepth.csv"
+
+      height: 240
+      width: 320
+
+#      height: 480
+#      width: 640
+
+      sources: True
+
+    aachen:
+      dataset_root: "/home/konstantin/datasets/Aachen-Day-Night"
+
+      height: 240
+      width: 320
+
+      sources: False
+
+loader:
+  analyze:
+    batch_size: 1
+    num_samples: -1
+
+    shuffle: False
+    num_workers: 0
+
+experiment:
+  num_epochs: 1
+  return_output: True

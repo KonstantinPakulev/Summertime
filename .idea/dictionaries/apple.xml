@@ -2,8 +2,23 @@
   <dictionary name="apple">
     <words>
       <w>datasets</w>
+      <w>epipolar</w>
+      <w>extrinsics</w>
       <w>grayscale</w>
+      <w>hpatches</w>
+      <w>illum</w>
+      <w>inliers</w>
+      <w>kernelized</w>
+      <w>logit</w>
+      <w>megadepth</w>
+      <w>opencv</w>
+      <w>opengv</w>
+      <w>probits</w>
+      <w>proj</w>
+      <w>reproj</w>
+      <w>resized</w>
       <w>tensorboard</w>
+      <w>topk</w>
     </words>
   </dictionary>
 </component>

@@ -15,8 +15,8 @@ from ignite.engine import Engine
 
 from legacy.exp_env.analyze_config import cfg
 from Net.source.nn.model import NetSDC
-from Net.source.nn.criterion import HardTripletLoss
-from Net._legacy.source.hpatches_dataset_old import (
+from Net.source.nn.net.criterion import HardTripletLoss
+from _legacy.Net_legacy.source.hpatches_dataset_old import (
     HPatchesDatasetOld,
 
     TRAIN,
