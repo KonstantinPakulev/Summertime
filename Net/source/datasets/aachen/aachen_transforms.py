@@ -41,7 +41,7 @@ class AachenCrop:
         self.crop = crop
 
     def __call__(self, item):
-        rect1 = self.crop.get_crop_rect(item[du.IMAGE1])
+        rect1 = self.crop.get_rect(item[du.IMAGE1])
 
         item[du.IMAGE1] = F.crop(item[du.IMAGE1], *rect1)
 

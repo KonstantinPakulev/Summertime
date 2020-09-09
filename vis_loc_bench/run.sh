@@ -2,7 +2,9 @@
 
 dataset_path="/home/konstantin/datasets/Aachen-Day-Night"
 colmap_path="/usr/bin"
-method_name="NetVGG"
+method_name="NetJoint"
+
+# find . -name "*.NetVGG" -type f -delete
 
 rm -r "${dataset_path}/sparse-${method_name}-empty"
 rm -r "${dataset_path}/sparse-${method_name}-database"

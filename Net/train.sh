@@ -4,7 +4,7 @@ model_config_path="configs/model.yaml"
 mode_config_path="configs/train.yaml"
 
 model_name="NetVGG"
-model_version='v4'
+model_version='v1'
 
 mode="train"
 

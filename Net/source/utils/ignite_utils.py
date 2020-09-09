@@ -4,9 +4,8 @@ import Net.source.nn.net.utils.endpoint_utils as f
 import Net.source.datasets.dataset_utils as d
 import Net.source.utils.metric_utils as meu
 
-from Net.source.utils.math_utils import get_gt_rel_pose, angle_mat, angle_vec
 from Net.source.utils.metric_utils import repeatability_score, match_score, mean_matching_accuracy, \
-    epipolar_match_score, relative_pose_error
+    epipolar_match_score, relative_pose_error, relative_param_pose_error
 
 """
 Batch and endpoint transformers
@@ -185,10 +184,34 @@ class PoseTransformer:
         return detailed_pose
 
 
-# class ParamPoseTransformer:
+class ParamPoseTransformer:
+
+    def __init__(self, px_thresh, device):
+        self.px_thresh = px_thresh
+        self.device = device
+
+    def __call__(self, output):
+        batch, endpoint = output
+
+        kp1, kp2 = endpoint[f.KP1], endpoint[f.KP2]
+        kp1_desc, kp2_desc = endpoint[f.KP1_DESC], endpoint[f.KP2_DESC]
+
+        shift_scale1, shift_scale2 = batch[d.SHIFT_SCALE1].to(self.device), batch[d.SHIFT_SCALE2].to(self.device)
+        intrinsics1, intrinsics2 = batch[d.INTRINSICS1].to(self.device), batch[d.INTRINSICS2].to(self.device)
+        extrinsics1, extrinsics2 = batch[d.EXTRINSICS1].to(self.device), batch[d.EXTRINSICS2].to(self.device)
+
+        R_param_err, t_param_err, success_mask = relative_param_pose_error(kp1, kp2, kp1_desc, kp2_desc, shift_scale1, shift_scale2,
+                                                                           intrinsics1, intrinsics2, extrinsics1, extrinsics2, self.px_thresh)
+        num_thresh = len(self.px_thresh)
+
+        detailed_param_pose = prepare_detailed_metric({meu.R_PARAM_ERR: R_param_err,
+                                                       meu.T_PARAM_ERR: t_param_err,
+                                                       meu.SUCCESS_MASK: success_mask}, batch, num_thresh)
+
+        return detailed_param_pose
 
 
-    # def __init__(self, px_thresh):
+
 
 
 """
@@ -257,10 +280,6 @@ def prepare_detailed_metric(data, batch, num_thresh):
 #                 an.NEG_DESC_DIST2: neg_second_dist.cpu(),
 #                 an.POS_NUM: pos_num,
 #                 an.VIS_NUM: vis_num}]
-# from Net.source.nn.net.utils.criterion_utils import create_w_desc_grid
-# from Net.source.utils.analyse_utils import measure_pos_neg_desc_dist
-# import Net.source.nn.net.utils.model_utils as a
-# import Net.source.utils.analyse_utils as an
 # if self.gt:
 #     est_rel_pose, est_inl_mask, matches_mask, nn_ids1 = \
 #         estimate_rel_poses_gt_opengv(kp1, endpoint[f.W_KP1], kp2, endpoint[f.W_KP2],
@@ -268,9 +287,6 @@ def prepare_detailed_metric(data, batch, num_thresh):
 #                                      intrinsics1, intrinsics2,
 #                                      shift_scale1, shift_scale2,
 #                                      self.px_thresh, True)
-
-# est_inl_mask = torch.zeros(len(self.px_thresh), *kp1.shape[:2], dtype=torch.bool).to(kp1.device)
-#
 # est_rel_pose, matches_mask, nn_ids1 = \
 #     estimate_rel_poses_opencv(kp1, kp2, kp1_desc, kp2_desc,
 #                               intrinsics1, intrinsics2,

@@ -24,6 +24,8 @@ DESCRIPTOR_SIZE = 'descriptor_size'
 INPUT_CHANNELS = 'input_channels'
 BATCH_NORM = 'batch_norm'
 
+DEPLOY_MODE = 'deploy_mode'
+
 NMS_KERNEL_SIZE = 'nms_kernel_size'
 SOFT_NMS_KERNEL_SIZE = 'soft_nms_kernel_size'
 

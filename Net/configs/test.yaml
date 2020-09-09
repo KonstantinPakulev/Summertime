@@ -1,9 +1,13 @@
 model:
   NetVGG:
-    input_channels: 1
+    input_channels: 3
+#    input_channels: 1
 
     nms_kernel_size: 3
-    top_k: 1024
+#    top_k: 1024
+    top_k: 8192
+
+    deploy_mode: True
 
     checkpoint_name: "7_ems=0.2318166"
 
@@ -15,6 +19,9 @@ model:
 
     v3:
       checkpoint_name: "7_ems=0.408757"
+
+    v4:
+      checkpoint_name: "33_ems=0.4560092"
 
 dataset:
   test:
@@ -46,9 +53,6 @@ dataset:
 
     aachen:
       dataset_root: "/home/konstantin/datasets/Aachen-Day-Night"
-
-      height: 720
-      width: 960
 
       sources: False
 

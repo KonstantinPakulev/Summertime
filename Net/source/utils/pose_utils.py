@@ -12,63 +12,28 @@ from opensfm import multiview
 from opensfm.types import BrownPerspectiveCamera
 from opensfm.matching import _compute_inliers_bearings
 
-from Net.source.utils.matching_utils import get_mutual_desc_matches, select_kp, get_gt_matches
-
-from Net.source.utils.math_utils import revert_data_transform, change_intrinsics, parametrize_pose, \
+from Net.source.utils.math_utils import parametrize_pose, \
     compose_gt_transform, epipolar_distance
-
-
-def estimate_rel_pose_opengv(kp1, kp2, kp1_desc, kp2_desc, shift_scale1, shift_scale2, intrinsics1, intrinsics2,
-                             px_thresh, dd_measure, detailed=False):
-    mutual_desc_matches_mask, nn_desc_ids = get_mutual_desc_matches(kp1_desc, kp2_desc, dd_measure, 0.9)
-
-    r_kp1 = revert_data_transform(kp1, shift_scale1)
-    r_kp2 = revert_data_transform(kp2, shift_scale2)
-
-    nn_r_kp2 = select_kp(r_kp2, nn_desc_ids)
-
-    rel_pose = prepare_rel_pose(r_kp1, nn_r_kp2, mutual_desc_matches_mask, intrinsics1, intrinsics2, px_thresh, detailed)
-
-    if detailed:
-        return rel_pose[0], rel_pose[1], mutual_desc_matches_mask, nn_desc_ids
-    else:
-        return rel_pose[0]
-
-
-def estimate_param_rel_pose_opencv(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, shift_scale1, shift_scale2,
-                                   intrinsics1, intrinsics2, px_thresh, detailed=False):
-    mutual_gt_matches_mask, nn_kp_ids = get_gt_matches(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, px_thresh)
-
-    r_kp1 = revert_data_transform(kp1, shift_scale1)
-    r_kp2 = revert_data_transform(kp2, shift_scale2)
-
-    nn_r_kp2 = select_kp(r_kp2, nn_kp_ids)
-    nn_r_i1_kp2 = change_intrinsics(nn_r_kp2, intrinsics2, intrinsics1)
-
-    est_E_param, success_mask = prepare_param_rel_pose(r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2)
-
-    if detailed:
-        return est_E_param, success_mask, mutual_gt_matches_mask, nn_kp_ids
-    else:
-        return est_E_param, success_mask
 
 
 class ParamRelPose(Function):
 
     @staticmethod
-    def forward(ctx, r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2):
+    def forward(ctx, r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2, t_px_thresh):
+        px_thresh = t_px_thresh.cpu().detach().numpy()
         est_E_param, success_mask = prepare_param_rel_pose(r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask,
-                                                           intrinsics1, intrinsics2)
+                                                           intrinsics1, intrinsics2, px_thresh)
 
         ctx.save_for_backward(est_E_param, success_mask, r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask,
-                              intrinsics1, intrinsics2)
+                              intrinsics1, intrinsics2, t_px_thresh)
         ctx.mark_non_differentiable(success_mask)
 
         return est_E_param, success_mask
 
     @staticmethod
     def backward(ctx, d_est_E_param, d_success_mask):
-        est_E_param, success_mask, r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2 = ctx.saved_tensors
+        est_E_param, success_mask, r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2, \
+        t_px_thresh = ctx.saved_tensors
 
         d_r_kp1, d_nn_r_kp2 = prepare_param_rel_pose_grad(d_est_E_param, est_E_param, success_mask, r_kp1, nn_r_i1_kp2,
                                                           mutual_gt_matches_mask, intrinsics1, intrinsics2)
@@ -76,18 +41,21 @@ class ParamRelPose(Function):
         return d_r_kp1, d_nn_r_kp2, \
                torch.zeros_like(mutual_gt_matches_mask).to(mutual_gt_matches_mask.device), \
                torch.zeros_like(intrinsics1).to(intrinsics1.device), \
-               torch.zeros_like(intrinsics2).to(intrinsics2.device)
+               torch.zeros_like(intrinsics2).to(intrinsics2.device), \
+               torch.zeros_like(t_px_thresh).to(t_px_thresh.device)
 
 
 class ParamTruncRelPose(Function):
 
     @staticmethod
-    def forward(ctx, r_kp1, nn_r_i1_kp2, nn_r_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2, extrinsics1, extrinsics2):
+    def forward(ctx, r_kp1, nn_r_i1_kp2, nn_r_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2,
+                extrinsics1, extrinsics2, t_px_thresh):
+        px_thresh = t_px_thresh.cpu().detach().numpy()
         est_E_param, success_mask = prepare_param_rel_pose(r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask,
-                                                           intrinsics1, intrinsics2)
+                                                           intrinsics1, intrinsics2, px_thresh)
 
         ctx.save_for_backward(est_E_param, success_mask, r_kp1, nn_r_i1_kp2, nn_r_kp2, mutual_gt_matches_mask,
-                              intrinsics1, intrinsics2, extrinsics1, extrinsics2)
+                              intrinsics1, intrinsics2, extrinsics1, extrinsics2, t_px_thresh)
         ctx.mark_non_differentiable(success_mask)
 
         return est_E_param, success_mask
@@ -96,7 +64,7 @@ class ParamTruncRelPose(Function):
     @staticmethod
     def backward(ctx, d_est_E_param, d_success_mask):
         est_E_param, success_mask, r_kp1, nn_r_i1_kp2, nn_r_kp2, mutual_gt_matches_mask, \
-        intrinsics1, intrinsics2, extrinsics1, extrinsics2 = ctx.saved_tensors
+        intrinsics1, intrinsics2, extrinsics1, extrinsics2, t_px_thresh = ctx.saved_tensors
 
         d_r_kp1, d_nn_r_kp2 = prepare_param_rel_pose_grad(d_est_E_param, est_E_param, success_mask, r_kp1, nn_r_i1_kp2,
                                                           mutual_gt_matches_mask, intrinsics1, intrinsics2)
@@ -117,106 +85,64 @@ class ParamTruncRelPose(Function):
                torch.zeros_like(intrinsics1).to(intrinsics1.device), \
                torch.zeros_like(intrinsics2).to(intrinsics2.device), \
                torch.zeros_like(extrinsics1).to(extrinsics1.device), \
-               torch.zeros_like(extrinsics2).to(extrinsics2.device)
+               torch.zeros_like(extrinsics2).to(extrinsics2.device), \
+               torch.zeros_like(t_px_thresh).to(t_px_thresh.device)
 
 
-def relative_pose_opengv(r_kp1, nn_r_kp2, intrinsics1, intrinsics2, px_thresh):
-    camera1 = intrinsics2camera(intrinsics1)
-    camera2 = intrinsics2camera(intrinsics2)
+def prepare_rel_pose(r_kp1, nn_r_kp2, mutual_desc_matches_mask, intrinsics1, intrinsics2, px_thresh):
+    b, n = r_kp1.shape[:2]
 
-    bearing_vectors1 = camera1.pixel_bearing_many(r_kp1)
-    bearing_vectors2 = camera2.pixel_bearing_many(nn_r_kp2)
+    est_rel_pose = torch.zeros(b, 3, 4).to(r_kp1.device)
+    est_inl_mask = torch.zeros(b, n, dtype=torch.bool).to(r_kp1.device)
 
-    # Convert pixel threshold to angular
-    avg_focal_length = (camera1.focal_x + camera1.focal_y + camera2.focal_x + camera2.focal_y) / 4
-    angle_thresh = np.arctan2(px_thresh, avg_focal_length)
+    for j in range(b):
+        b_mutual_desc_matches_mask = mutual_desc_matches_mask[j]
 
-    T = multiview.relative_pose_ransac(bearing_vectors1, bearing_vectors2, b"STEWENIUS",
-                                       1 - np.cos(angle_thresh), 5000, 0.99999)
-    inliers = _compute_inliers_bearings(bearing_vectors1, bearing_vectors2, T, angle_thresh)
+        if b_mutual_desc_matches_mask.sum() < 8:
+            continue
 
-    T = multiview.relative_pose_optimize_nonlinear(bearing_vectors1[inliers], bearing_vectors2[inliers],
-                                                   T[:3, 3], T[:3, :3])
-    inliers = _compute_inliers_bearings(bearing_vectors1, bearing_vectors2, T, angle_thresh)
+        cv_kp1 = r_kp1[j][b_mutual_desc_matches_mask].cpu().detach().numpy()
+        nn_cv_kp2 = nn_r_kp2[j][b_mutual_desc_matches_mask].cpu().detach().numpy()
 
-    return T, inliers
+        T, b_inliers = relative_pose_opengv(cv_kp1, nn_cv_kp2,
+                                            intrinsics1[j].cpu().numpy(), intrinsics2[j].cpu().numpy(), px_thresh)
 
+        est_rel_pose[j] = torch.tensor(T).to(r_kp1.device)
+        est_rel_pose[j][:3, 3] = normalize(est_rel_pose[j][:3, 3], dim=-1)
 
-def relative_param_pose_opencv(r_kp1, nn_r_kp2, intrinsics1):
-    # TODO. Do we need thresholding here?
-    est_E, _ = cv2.findEssentialMat(r_kp1, nn_r_kp2, intrinsics1, method=cv2.RANSAC)
-    _, est_R, est_t, _ = cv2.recoverPose(est_E, r_kp1, nn_r_kp2, intrinsics1)
+        est_inl_mask[j][b_mutual_desc_matches_mask] = torch.tensor(b_inliers).to(r_kp1.device)
 
-    est_t = est_t.reshape(-1)
-    est_t = est_t / np.linalg.norm(est_t)
-
-    est_E_param = parametrize_pose(est_R, est_t)
-
-    return est_E_param
+    return est_rel_pose, est_inl_mask
 
 
-def prepare_rel_pose(r_kp1, nn_r_kp2, mutual_desc_matches_mask, intrinsics1, intrinsics2, px_thresh, detailed):
-    num_thresh = len(px_thresh)
-
-    est_rel_pose = torch.zeros(num_thresh, r_kp1.shape[0], 3, 4).to(r_kp1.device)
-
-    if detailed:
-        est_inl_mask = torch.zeros(num_thresh, *r_kp1.shape[:2], dtype=torch.bool).to(r_kp1.device)
-
-    for i, thresh in enumerate(px_thresh):
-        for j in range(r_kp1.shape[0]):
-            b_mutual_desc_matches_mask = mutual_desc_matches_mask[j]
-
-            if b_mutual_desc_matches_mask.sum() < 8:
-                continue
-
-            cv_kp1 = r_kp1[j][b_mutual_desc_matches_mask].cpu().detach().numpy()
-            nn_cv_kp2 = nn_r_kp2[j][b_mutual_desc_matches_mask].cpu().detach().numpy()
-
-            T, b_inliers = relative_pose_opengv(cv_kp1, nn_cv_kp2,
-                                                intrinsics1[j].cpu().numpy(), intrinsics2[j].cpu().numpy(), thresh)
-
-            est_rel_pose[i][j] = torch.tensor(T).to(r_kp1.device)
-            est_rel_pose[i][j][:3, 3] = normalize(est_rel_pose[i][j][:3, 3], dim=-1)
-
-            if detailed:
-                est_inl_mask[i][j][b_mutual_desc_matches_mask] = torch.tensor(b_inliers).to(r_kp1.device)
-
-    if detailed:
-        return est_rel_pose, est_inl_mask
-    else:
-        return est_rel_pose
-
-
-def prepare_param_rel_pose(r_kp1, nn_r_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2):
+def prepare_param_rel_pose(r_kp1, nn_r_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2, px_thresh):
     b = r_kp1.shape[0]
-    est_E_param = torch.zeros(b, 5).to(r_kp1.device)
 
+    est_E_param = torch.zeros(b, 5).to(r_kp1.device)
     success_mask = torch.zeros(b, dtype=torch.bool).to(r_kp1.device)
 
-    for i in range(b):
-        b_mutual_gt_matches_mask = mutual_gt_matches_mask[i]
+    for j in range(b):
+        b_mutual_gt_matches_mask = mutual_gt_matches_mask[j]
 
         if b_mutual_gt_matches_mask.sum() < 8:
             continue
 
-        cv_kp1 = r_kp1[i][b_mutual_gt_matches_mask].cpu().detach().numpy()
-        cv_nn_kp2 = nn_r_kp2[i][b_mutual_gt_matches_mask].cpu().detach().numpy()
+        cv_kp1 = r_kp1[j][b_mutual_gt_matches_mask].cpu().detach().numpy()
+        cv_nn_kp2 = nn_r_kp2[j][b_mutual_gt_matches_mask].cpu().detach().numpy()
 
-        cv_intrinsics1 = intrinsics1[i].cpu().numpy()
+        cv_intrinsics1 = intrinsics1[j].cpu().numpy()
 
-        cv_i_intrinsics1 = intrinsics1[i].inverse().cpu().numpy()
-        cv_i_intrinsics2 = intrinsics2[i].inverse().cpu().numpy()
+        cv_i_intrinsics1 = intrinsics1[j].inverse().cpu().numpy()
+        cv_i_intrinsics2 = intrinsics2[j].inverse().cpu().numpy()
 
-        est_init_E_param = relative_param_pose_opencv(cv_kp1, cv_nn_kp2, cv_intrinsics1)
+        est_init_E_param = relative_param_pose_opencv(cv_kp1, cv_nn_kp2, cv_intrinsics1, px_thresh)
 
         opt_res = least_squares(loss_fun, est_init_E_param, jac=loss_fun_jac,
                                 args=(cv_kp1, cv_nn_kp2, cv_i_intrinsics1, cv_i_intrinsics2), method='lm')
 
         if opt_res.success:
-            est_E_param[i] = torch.tensor(opt_res.x).to(r_kp1.device)
-
-            success_mask[i] = True
+            est_E_param[j] = torch.tensor(opt_res.x).to(r_kp1.device)
+            success_mask[j] = True
 
     return est_E_param, success_mask
 
@@ -260,6 +186,40 @@ def prepare_param_rel_pose_grad(d_est_E_param, est_E_param, success_mask, r_kp1,
                     d_nn_r_kp2[i][b_mutual_gt_matches_mask] = i_d_nn_r_kp2
 
     return d_r_kp1, d_nn_r_kp2
+
+
+def relative_pose_opengv(r_kp1, nn_r_kp2, intrinsics1, intrinsics2, px_thresh):
+    camera1 = intrinsics2camera(intrinsics1)
+    camera2 = intrinsics2camera(intrinsics2)
+
+    bearing_vectors1 = camera1.pixel_bearing_many(r_kp1)
+    bearing_vectors2 = camera2.pixel_bearing_many(nn_r_kp2)
+
+    # Convert pixel threshold to angular
+    avg_focal_length = (camera1.focal_x + camera1.focal_y + camera2.focal_x + camera2.focal_y) / 4
+    angle_thresh = np.arctan2(px_thresh, avg_focal_length)
+
+    T = multiview.relative_pose_ransac(bearing_vectors1, bearing_vectors2, b"STEWENIUS",
+                                       1 - np.cos(angle_thresh), 5000, 0.99999)
+    inliers = _compute_inliers_bearings(bearing_vectors1, bearing_vectors2, T, angle_thresh)
+
+    T = multiview.relative_pose_optimize_nonlinear(bearing_vectors1[inliers], bearing_vectors2[inliers],
+                                                   T[:3, 3], T[:3, :3])
+    inliers = _compute_inliers_bearings(bearing_vectors1, bearing_vectors2, T, angle_thresh)
+
+    return T, inliers
+
+
+def relative_param_pose_opencv(r_kp1, nn_r_kp2, intrinsics1, px_thresh):
+    est_E, _ = cv2.findEssentialMat(r_kp1, nn_r_kp2, intrinsics1, method=cv2.RANSAC, threshold=px_thresh)
+    _, est_R, est_t, _ = cv2.recoverPose(est_E, r_kp1, nn_r_kp2, intrinsics1)
+
+    est_t = est_t.reshape(-1)
+    est_t = est_t / np.linalg.norm(est_t)
+
+    est_E_param = parametrize_pose(est_R, est_t)
+
+    return est_E_param
 
 
 """
@@ -505,154 +465,6 @@ def test_pose_pt_derivative(x, iK1, iK2, kp1, kp2):
             # print('-')
     print('-')
 
-# class EstimateParamEssMat2(Function):
-#
-#     @staticmethod
-#     def forward(ctx, o_kp1, nn_o_kp2, intrinsics1, intrinsics2, match_mask, F):
-#         i_intrinsics1 = intrinsics1.inverse()
-#         i_intrinsics2 = intrinsics2.inverse()
-#
-#         b = o_kp1.shape[0]
-#         E_ests = torch.zeros(b, 5).to(o_kp1.device)
-#         E_init_ests = torch.zeros(b, 5).to(o_kp1.device)
-#
-#         success_mask = torch.zeros(b, dtype=torch.bool).to(o_kp1.device)
-#
-#         for i in range(b):
-#             cv_kp1 = o_kp1[i, match_mask[i]].cpu().numpy()
-#             cv_nn_kp2 = nn_o_kp2[i, match_mask[i]].cpu().numpy()
-#
-#             if cv_kp1.shape[0] > 10:
-#
-#                 cv_intrinsics1 = intrinsics1[i].cpu().numpy()
-#                 cv_intrinsics2 = intrinsics2[i].cpu().numpy()
-#
-#                 cv_i_intrinsics1 = i_intrinsics1[i].cpu().numpy()
-#                 cv_i_intrinsics2 = i_intrinsics2[i].cpu().numpy()
-#
-#                 E_est_init = estimate_ess_mat_opencv(cv_kp1, cv_nn_kp2, cv_intrinsics1, cv_intrinsics2)
-#
-#                 opt_res = least_squares(loss_fun, E_est_init, jac=loss_fun_jac,
-#                                         args=(cv_kp1, cv_nn_kp2, cv_i_intrinsics1, cv_i_intrinsics2), method='lm')
-#
-#                 if opt_res.success:
-#                     E_init_ests[i] = torch.tensor(E_est_init).to(o_kp1.device)
-#                     E_ests[i] = torch.tensor(opt_res.x).to(o_kp1.device)
-#
-#                     success_mask[i] = True
-#
-#         ctx.save_for_backward(E_ests, success_mask, o_kp1, nn_o_kp2, i_intrinsics1, i_intrinsics2, match_mask, F)
-#         ctx.mark_non_differentiable(E_init_ests, success_mask)
-#
-#         return E_ests, E_init_ests, success_mask
-#
-#     @staticmethod
-#     def backward(ctx, dE_est_outputs, dE_init_ests, d_success_mask):
-#         E_ests, success_mask, o_kp1, nn_o_kp2, i_intrinsics1, i_intrinsics2, match_mask, F = ctx.saved_tensors
-#
-#         b = o_kp1.shape[0]
-#         ds_o_kp1 = torch.zeros_like(o_kp1).to(o_kp1.device)
-#         ds_nn_o_kp2 = torch.zeros_like(nn_o_kp2).to(nn_o_kp2.device)
-#
-#         line1 = to_homogeneous2(nn_o_kp2) @ F
-#         norm_line1 = line1 / line1[..., :2].norm(dim=-1).clamp(min=1e-16).unsqueeze(-1)
-#
-#         for i in range(b):
-#             if success_mask[i]:
-#                 E_est = E_ests[i].detach().cpu().numpy()
-#
-#                 cv_kp1 = o_kp1[i, match_mask[i]].cpu().numpy()
-#                 cv_nn_kp2 = nn_o_kp2[i, match_mask[i]].cpu().numpy()
-#
-#                 cv_i_intrinsics1 = i_intrinsics1[i].cpu().numpy()
-#                 cv_i_intrinsics2 = i_intrinsics2[i].cpu().numpy()
-#
-#                 norm_of_line_i = norm_line1[i, match_mask[i]].cpu().detach().numpy()
-#
-#                 d_E_o_kp1, d_E_nn_o_kp2 = compute_pose_pt_derivative(E_est, cv_i_intrinsics1, cv_i_intrinsics2, cv_kp1,
-#                                                                      cv_nn_kp2)
-#
-#                 if d_E_o_kp1 is not None:
-#                     d_E_o_kp1 = torch.tensor(d_E_o_kp1, dtype=torch.float).to(o_kp1.device)
-#                     d_E_nn_o_kp2 = torch.tensor(d_E_nn_o_kp2, dtype=torch.float).to(nn_o_kp2.device)
-#
-#                     m1 = d_E_o_kp1.view(-1, 10).norm(dim=-1).abs() > 0.1
-#                     m2 = d_E_nn_o_kp2.view(-1, 10).norm(dim=-1).abs() > 0.1
-#                     m = m1.sum() + m2.sum()
-#
-#                     if m == 0:
-#                         d_o_kp1 = (dE_est_outputs[i].unsqueeze(0).unsqueeze(0) @ d_E_o_kp1).squeeze(1)
-#                         d_nn_o_kp2 = (dE_est_outputs[i].unsqueeze(0).unsqueeze(0) @ d_E_nn_o_kp2).squeeze(1)
-#
-#                         begin = np.abs((to_homogeneous(cv_kp1) * norm_of_line_i).sum(axis=-1))
-#                         end = np.abs(
-#                             (to_homogeneous(cv_kp1 - d_o_kp1.cpu().detach().numpy()) * norm_of_line_i).sum(axis=-1))
-#
-#                         mask = torch.tensor((end - begin) < 0).to(F.device)
-#
-#                         # initial_dist = (to_homogeneous(cv_kp1) * norm_of_line_i).sum(axis=-1)
-#                         # final_dist = (to_homogeneous(cv_kp1 + d_o_kp1.cpu().detach().numpy()) * norm_of_line_i).sum(axis=-1)
-#
-#                         # mask = (final_dist - initial_dist) > 0
-#                         # mask = torch.tensor(mask).to(F.device)
-#
-#                         # print(normalize(d_o_kp1))
-#
-#                         ds_o_kp1[i, match_mask[i]] = d_o_kp1 * mask.float().unsqueeze(-1)
-#                         ds_nn_o_kp2[i, match_mask[i]] = d_nn_o_kp2 * mask.float().unsqueeze(-1)
-#
-#                         # ds_o_kp1[i, match_mask[i]] = d_o_kp1
-#                         # ds_nn_o_kp2[i, match_mask[i]] = d_nn_o_kp2
-#
-#         return ds_o_kp1, ds_nn_o_kp2, \
-#                torch.zeros_like(i_intrinsics1).to(i_intrinsics1.device), \
-#                torch.zeros_like(i_intrinsics2).to(i_intrinsics2.device), \
-#                torch.zeros_like(match_mask).to(match_mask.device), \
-#                torch.zeros_like(F).to(F.device)
-
-#
-# def estimate_pose_grad(o_kp1, nn_o_kp2, intrinsics1, intrinsics2, match_mask):
-#     i_intrinsics1 = intrinsics1.inverse()
-#     i_intrinsics2 = intrinsics2.inverse()
-#
-#     b = o_kp1.shape[0]
-#     n = o_kp1.shape[1]
-#     success_mask = torch.zeros(b, dtype=torch.bool).to(o_kp1.device)
-#
-#     ds_o_kp1 = torch.zeros(b, n).to(o_kp1.device)
-#     ds_nn_o_kp2 = torch.zeros(b, n).to(nn_o_kp2.device)
-#
-#     for i in range(b):
-#         cv_kp1 = o_kp1[i, match_mask[i]].cpu().numpy()
-#         cv_nn_kp2 = nn_o_kp2[i, match_mask[i]].cpu().numpy()
-#
-#         if cv_kp1.shape[0] > 10:
-#
-#             cv_intrinsics1 = intrinsics1[i].cpu().numpy()
-#             cv_intrinsics2 = intrinsics2[i].cpu().numpy()
-#
-#             cv_i_intrinsics1 = i_intrinsics1[i].cpu().numpy()
-#             cv_i_intrinsics2 = i_intrinsics2[i].cpu().numpy()
-#
-#             E_est_init = estimate_ess_mat_opencv(cv_kp1, cv_nn_kp2, cv_intrinsics1, cv_intrinsics2)
-#
-#             opt_res = least_squares(loss_fun, E_est_init, jac=loss_fun_jac,
-#                                     args=(cv_kp1, cv_nn_kp2, cv_i_intrinsics1, cv_i_intrinsics2), method='lm')
-#
-#             if opt_res.success:
-#                 success_mask[i] = True
-#
-#                 d_E_o_kp1, d_E_nn_o_kp2 = compute_pose_pt_derivative(opt_res.x, cv_i_intrinsics1, cv_i_intrinsics2,
-#                                                                      cv_kp1, cv_nn_kp2)
-#
-#                 n_i = d_E_o_kp1.shape[0]
-#                 d_E_o_kp1 = np.linalg.norm(d_E_o_kp1.reshape(n_i, -1), axis=-1)
-#                 d_E_nn_o_kp2 = np.linalg.norm(d_E_nn_o_kp2.reshape(n_i, -1), axis=-1)
-#
-#                 ds_o_kp1[i, match_mask[i]] = torch.tensor(d_E_o_kp1, dtype=torch.float).to(o_kp1.device)
-#                 ds_nn_o_kp2[i, match_mask[i]] = torch.tensor(d_E_nn_o_kp2, dtype=torch.float).to(nn_o_kp2.device)
-#
-#     return ds_o_kp1, ds_nn_o_kp2, success_mask
 
 # def get_r_t(x):
 #     R, jac = cv2.Rodrigues(x[0:3])
@@ -662,15 +474,3 @@ def test_pose_pt_derivative(x, iK1, iK2, kp1, kp2):
 #     t = R2[:, 2]
 #
 #     return R, t
-
-# def compute_epipolar_errors(F, kp1, kp2):
-#     errs = []
-#     for i in range(0, len(kp1)):
-#         x1h = np.ones(3)
-#         x1h[0:2] = kp1[i, 0:2]
-#         x2h = np.ones(3)
-#         x2h[0:2] = kp2[i, 0:2]
-#         l = F @ x1h
-#         l = l / np.linalg.norm(l[0:2])
-#         errs.append(np.abs(x2h.dot(l)))
-#     return errs

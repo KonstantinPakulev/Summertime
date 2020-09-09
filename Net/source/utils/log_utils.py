@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 import torch
 from torchvision.utils import make_grid
@@ -10,6 +11,7 @@ import Net.source.utils.metric_utils as meu
 
 from Net.source.core import experiment as exp
 
+from Net.source.utils.math_utils import revert_data_transform
 from Net.source.utils.vis_utils import draw_cv_matches
 from Net.source.utils.metric_utils import repeatability_score, match_score
 
@@ -168,6 +170,15 @@ def print_summary(logs, metric_config):
 
             print(intent + f"EMS: {ems:.4f} ({ems_num_matches:.2f}/{ems_num_vis_gt_matches:.2f})")
 
+        if meu.R_PARAM_ERR in l.columns:
+            num_success = l[meu.SUCCESS_MASK].sum().astype('float')
+
+            r_param_ratio = (l[meu.R_PARAM_ERR] * l[meu.SUCCESS_MASK].astype('float')).sum() / num_success
+            t_param_ratio = (l[meu.T_PARAM_ERR] * l[meu.SUCCESS_MASK].astype('float')).sum() / num_success
+
+            print(intent + f"Average param. orientation norm error is {r_param_ratio:.4f}")
+            print(intent + f"Average param. translation norm error is {t_param_ratio:.4f}")
+
 
 def test_log_to_csv(log_dir, log, metric_config, models_config, datasets):
     px_thresh = metric_config[exp.PX_THRESH]
@@ -177,6 +188,26 @@ def test_log_to_csv(log_dir, log, metric_config, models_config, datasets):
 
     for p, l in zip(px_thresh, log):
         l.to_csv(os.path.join(log_dir, f"{checkpoint_name}_{p}_{dataset_str}_px_log.csv"))
+
+
+def save_aachen_inference(dataset_config, output):
+    batch, endpoint = output
+
+    scene_name, image1_name = batch.get(du.SCENE_NAME)[0], batch.get(du.IMAGE1_NAME)[0]
+    kp1 = endpoint[eu.KP1]
+    shift_scale1 = batch.get(du.SHIFT_SCALE1).to(kp1.device)
+
+    kp1 = revert_data_transform(kp1, shift_scale1).cpu().squeeze().numpy()
+    kp1_desc = endpoint[eu.KP1_DESC].cpu().squeeze().numpy()
+
+    dataset_root = dataset_config[du.AACHEN][du.DATASET_ROOT]
+
+    method_name = "NetJoint"
+    file_path = os.path.join(dataset_root, scene_name, f"{image1_name}.{method_name}.npz")
+    r_file_path = os.path.join(dataset_root, scene_name, f"{image1_name}.{method_name}")
+
+    np.savez(file_path, keypoints=kp1, descriptors=kp1_desc)
+    os.rename(file_path, r_file_path)
 
 
 def print_metric(metric_name, image1_name, image2_name, metric, num_matches, num_vis_matches, px_thresh):
@@ -205,23 +236,6 @@ def print_metric(metric_name, image1_name, image2_name, metric, num_matches, num
 # def save_analysis_log(log_dir, log, models_config):
 #     checkpoint_name = models_config[exp.CHECKPOINT_NAME]
 #     log[0].to_csv(os.path.join(log_dir, f"{checkpoint_name[0]}_analysis_log.csv"))
-
-
-# def save_aachen_inference(dataset_root, output):
-#     batch, endpoint = output
-#
-#     scene_name, image1_name = batch.get(d.SCENE_NAME)[0], batch.get(d.IMAGE1_NAME)[0]
-#     kp1, kp1_desc = revert_data_transform(endpoint[eu.KP1], batch.get(d.SHIFT_SCALE1)), endpoint[eu.KP1_DESC]
-#
-#     kp1 = kp1.cpu().squeeze().numpy()
-#     kp1_desc = kp1_desc.cpu().squeeze().numpy()
-#
-#     method_name = "NetVGG"
-#     file_path = os.path.join(dataset_root, scene_name, f"{image1_name}.{method_name}.npz")
-#     r_file_path = os.path.join(dataset_root, scene_name, f"{image1_name}.{method_name}")
-#
-#     np.savez(file_path, keypoints=kp1, descriptors=kp1_desc)
-#     os.rename(file_path, r_file_path)
 
 
 # """
@@ -412,27 +426,3 @@ def print_metric(metric_name, image1_name, image2_name, metric, num_matches, num
 #                                                'border-color': 'black'}). \
 #         set_table_styles([index_style, column_style]). \
 #         apply(highlight_max, axis=0)
-
-# def plot_keypoints(writer, state_engine, data_engine):
-#     batch, endpoint = data_engine.state.output
-#
-#     s_image1, s_image2 = batch.get(d.S_IMAGE1), batch.get(d.S_IMAGE1)
-#     image1_name, image2_name = batch.get(d.IMAGE1_NAME), batch.get(d.IMAGE2_NAME)
-#     kp1, kp2 = endpoint[eu.KP1], endpoint[eu.KP2]
-#
-#     cv_s_image1 = torch2cv(s_image1[0])
-#     cv_s_image2 = torch2cv(s_image2[0])
-#
-#     image1_name = image1_name[0]
-#     image2_name = image2_name[0]
-#
-#     s_image1_kp = cv2torch(draw_cv_keypoints(cv_s_image1, kp1[0], (0, 255, 0))).unsqueeze(0)
-#     s_image2_kp = cv2torch(draw_cv_keypoints(cv_s_image2, kp2[0], (0, 255, 0))).unsqueeze(0)
-#
-#     writer.add_image(f"{image1_name} and {image2_name} keypoints",
-#                      make_grid(torch.cat((s_image1_kp, s_image2_kp), dim=0)), state_engine.state.epoch)
-# """
-# Variables for saving the results into files
-# """
-# EVAL_RESULTS_FILE = 'eval_results'
-# EVAL_SAMPLES_DIR = 'eval_samples'

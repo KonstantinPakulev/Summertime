@@ -3,12 +3,12 @@ import numpy as np
 import torch
 
 from Net.source.utils.math_utils import revert_data_transform, compose_gt_transform, epipolar_distance, \
-    get_gt_rel_pose, angle_mat, angle_vec, E_param
+    change_intrinsics, get_gt_rel_pose, angle_mat, angle_vec, E_param
 
 from Net.source.utils.matching_utils import get_gt_matches, get_mutual_desc_matches, select_kp, \
     verify_mutual_desc_matches, get_num_vis_gt_matches
 
-from Net.source.utils.pose_utils import estimate_rel_pose_opengv, estimate_param_rel_pose_opencv
+from Net.source.utils.pose_utils import prepare_rel_pose, prepare_param_rel_pose
 
 
 """
@@ -36,12 +36,17 @@ R_ERR = 'r_err'
 T_ERR = 't_err'
 NUM_INL = 'num_inl'
 
+PARAM_REL_POSE = 'param_rel_pose'
+R_PARAM_ERR = 'r_param_err'
+T_PARAM_ERR = 't_param_err'
+SUCCESS_MASK = 'success_mask'
+
+
 """
 Metric functions
 """
 
-# TODO. Make possible to use only scalar for evaluation
-
+# TODO. Seems like there is some issue with enumerator. Fix
 
 def repeatability_score(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, px_thresh, detailed):
     """
@@ -60,16 +65,19 @@ def repeatability_score(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, 
     # Select minimum number of visible points for each scene
     num_vis_gt_matches = get_num_vis_gt_matches(w_vis_kp1_mask, w_vis_kp2_mask)
 
+    num_thresh = len(px_thresh)
+    b, n = kp1.shape[:2]
+
     if detailed:
-        rep_scores = torch.zeros(len(px_thresh), kp1.shape[0])
-        num_matches = torch.zeros(len(px_thresh), kp1.shape[0])
-        match_mask = torch.zeros(len(px_thresh), kp1.shape[0], kp1.shape[1])
+        rep_scores = torch.zeros(num_thresh, b)
+        num_matches = torch.zeros(num_thresh, b)
+        match_mask = torch.zeros(num_thresh, b, n)
     else:
-        rep_scores = torch.zeros(len(px_thresh))
+        rep_scores = torch.zeros(num_thresh)
 
     # Filter matches by lower thresholds
     for i, thresh in enumerate(px_thresh):
-        if i != len(px_thresh) - 1:
+        if i != num_thresh - 1:
             i_gt_matches_mask = nn_kp_values.le(thresh)
         else:
             i_gt_matches_mask = gt_matches_mask
@@ -114,16 +122,19 @@ def match_score(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, kp1_desc
     # Select minimum number of visible points for each scene
     num_vis_gt_matches = get_num_vis_gt_matches(w_vis_kp1_mask, w_vis_kp2_mask)
 
+    num_thresh = len(px_thresh)
+    b, n = kp1.shape[:2]
+
     if detailed:
-        m_scores = torch.zeros(len(px_thresh), kp1.shape[0])
-        num_matches = torch.zeros(len(px_thresh), kp1.shape[0])
-        match_mask = torch.zeros(len(px_thresh), kp1.shape[0], kp1.shape[1])
+        m_scores = torch.zeros(num_thresh, b)
+        num_matches = torch.zeros(num_thresh, b)
+        match_mask = torch.zeros(num_thresh, b, n)
     else:
-        m_scores = torch.zeros(len(px_thresh))
+        m_scores = torch.zeros(num_thresh)
 
     # Filter matches by lower thresholds
     for i, thresh in enumerate(px_thresh):
-        if i != len(px_thresh) - 1:
+        if i != num_thresh - 1:
             i_mutual_matches_mask = mutual_desc_matches_mask * nn_kp_values.le(thresh)
         else:
             i_mutual_matches_mask = mutual_desc_matches_mask * v_mutual_desc_matches_mask
@@ -167,15 +178,18 @@ def mean_matching_accuracy(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mas
 
     num_vis_gt_matches = mutual_desc_matches_mask.sum(dim=-1).float().clamp(min=1e-8)
 
+    num_thresh = len(px_thresh)
+    b, n = kp1.shape[:2]
+
     if detailed:
-        mma_scores = torch.zeros(len(px_thresh), kp1.shape[0])
-        num_matches = torch.zeros(len(px_thresh), kp1.shape[0])
-        match_mask = torch.zeros(len(px_thresh), kp1.shape[0], kp1.shape[1])
+        mma_scores = torch.zeros(num_thresh, b)
+        num_matches = torch.zeros(num_thresh, b)
+        match_mask = torch.zeros(num_thresh, b, n)
     else:
-        mma_scores = torch.zeros(len(px_thresh))
+        mma_scores = torch.zeros(num_thresh)
 
     for i, thresh in enumerate(px_thresh):
-        if i != len(px_thresh) - 1:
+        if i != num_thresh - 1:
             i_mutual_matches_mask = mutual_desc_matches_mask * nn_kp_values.le(thresh)
         else:
             i_mutual_matches_mask = mutual_desc_matches_mask * v_mutual_desc_matches_mask
@@ -208,6 +222,9 @@ def epipolar_match_score(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask,
     # Select minimum number of visible points for each scene
     num_vis_gt_matches = get_num_vis_gt_matches(w_vis_kp1_mask, w_vis_kp2_mask)
 
+    num_thresh = len(px_thresh)
+    b, n = kp1.shape[:2]
+
     o_kp1 = revert_data_transform(kp1, shift_scale1)
     o_kp2 = revert_data_transform(kp2, shift_scale2)
 
@@ -218,14 +235,14 @@ def epipolar_match_score(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask,
     ep_dist = epipolar_distance(o_kp1, nn_o_kp2, F)
 
     if detailed:
-        em_scores = torch.zeros(len(px_thresh), kp1.shape[0])
-        num_matches = torch.zeros(len(px_thresh), kp1.shape[0])
-        match_mask = torch.zeros(len(px_thresh), kp1.shape[0], kp1.shape[1])
+        em_scores = torch.zeros(num_thresh, b)
+        num_matches = torch.zeros(num_thresh, b)
+        match_mask = torch.zeros(num_thresh, b, n)
     else:
-        em_scores = torch.zeros(len(px_thresh))
+        em_scores = torch.zeros(num_thresh)
 
     for i, thresh in enumerate(px_thresh):
-        if i != len(px_thresh) - 1:
+        if i != num_thresh - 1:
             i_mutual_matches_mask = mutual_desc_matches_mask * nn_kp_values.le(thresh) * ep_dist.le(thresh)
         else:
             i_mutual_matches_mask = mutual_desc_matches_mask * v_mutual_desc_matches_mask * ep_dist.le(thresh)
@@ -261,21 +278,29 @@ def relative_pose_error(kp1, kp2, kp1_desc, kp2_desc, shift_scale1, shift_scale2
     :param px_thresh: list
     :param detailed: bool
     """
-    est_rel_pose, est_inl_mask, mutual_desc_matches_mask, nn_desc_ids = estimate_rel_pose_opengv(kp1, kp2, kp1_desc, kp2_desc,
-                                                                                                 shift_scale1, shift_scale2,
-                                                                                                 intrinsics1, intrinsics2,
-                                                                                                 px_thresh, None, True)
+    mutual_desc_matches_mask, nn_desc_ids = get_mutual_desc_matches(kp1_desc, kp2_desc, None, 0.9)
+
+    r_kp1 = revert_data_transform(kp1, shift_scale1)
+    r_kp2 = revert_data_transform(kp2, shift_scale2)
+
+    nn_r_kp2 = select_kp(r_kp2, nn_desc_ids)
+
+    num_thresh = len(px_thresh)
+    b, n = kp1.shape[:2]
 
     gt_rel_pose = get_gt_rel_pose(extrinsics1, extrinsics2)
 
-    num_thresh = len(px_thresh)
+    R_err = torch.zeros(num_thresh, b)
+    t_err = torch.zeros(num_thresh, b)
 
-    R_err = torch.zeros(num_thresh, 1)
-    t_err = torch.zeros(num_thresh, 1)
+    est_inl_mask = torch.zeros(num_thresh, b, n, dtype=torch.bool).to(kp1.device)
 
-    for i in range(num_thresh):
-        R_err[i][0] = angle_mat(est_rel_pose[i, :, :3, :3], gt_rel_pose[:, :3, :3])
-        t_err[i][0] = angle_vec(est_rel_pose[i, :, :3, 3], gt_rel_pose[:, :3, 3])
+    for i, thresh in enumerate(px_thresh):
+        i_est_rel_pose, i_est_inl_mask = prepare_rel_pose(r_kp1, nn_r_kp2, mutual_desc_matches_mask,
+                                                          intrinsics1, intrinsics2, thresh)
+
+        R_err[i] = angle_mat(i_est_rel_pose[:, :3, :3], gt_rel_pose[:, :3, :3])
+        t_err[i] = angle_vec(i_est_rel_pose[:, :3, 3], gt_rel_pose[:, :3, 3])
 
     if detailed:
         return R_err, t_err, est_inl_mask, mutual_desc_matches_mask, nn_desc_ids
@@ -284,16 +309,36 @@ def relative_pose_error(kp1, kp2, kp1_desc, kp2_desc, shift_scale1, shift_scale2
         return R_err, t_err, est_inl_mask
 
 
-def relative_param_pose_error(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, shift_scale1, shift_scale2,
+def relative_param_pose_error(kp1, kp2, kp1_desc, kp2_desc, shift_scale1, shift_scale2,
                               intrinsics1, intrinsics2, extrinsics1, extrinsics2, px_thresh):
-    est_E_param, success_mask = estimate_param_rel_pose_opencv(kp1, kp2, w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask, shift_scale1, shift_scale2,
-                                                               intrinsics1, intrinsics2, px_thresh)
+    mutual_desc_matches_mask, nn_desc_ids = get_mutual_desc_matches(kp1_desc, kp2_desc, None, 0.9)
+
+    r_kp1 = revert_data_transform(kp1, shift_scale1)
+    r_kp2 = revert_data_transform(kp2, shift_scale2)
+
+    nn_r_kp2 = select_kp(r_kp2, nn_desc_ids)
+    nn_r_i1_kp2 = change_intrinsics(nn_r_kp2, intrinsics2, intrinsics1)
 
     gt_E_param = compose_gt_transform(intrinsics1, intrinsics2, extrinsics1, extrinsics2, E_param)
 
-    param_err = (est_E_param - gt_E_param).norm(dim=-1)
+    num_thresh = len(px_thresh)
+    b = kp1.shape[0]
 
-    return param_err, success_mask
+    R_param_err = torch.zeros(num_thresh, b)
+    t_param_err = torch.zeros(num_thresh, b)
+
+    success_mask = torch.zeros(num_thresh, b, dtype=torch.bool)
+
+    for i, thresh in enumerate(px_thresh):
+        i_est_E_param, i_success_mask = prepare_param_rel_pose(r_kp1, nn_r_i1_kp2, mutual_desc_matches_mask,
+                                                               intrinsics1, intrinsics2, thresh)
+
+        R_param_err[i] = (i_est_E_param[:, :3] - gt_E_param[:, :3]).norm(dim=-1)
+        t_param_err[i] = (i_est_E_param[:, 3:] - gt_E_param[:, 3:]).norm(dim=-1)
+
+        success_mask[i] = i_success_mask
+
+    return R_param_err, t_param_err, success_mask
 
 
 def pose_mAP(pose_err, pose_thresh, max_angle=180):

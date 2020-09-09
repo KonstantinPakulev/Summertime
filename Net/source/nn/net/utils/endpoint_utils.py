@@ -118,7 +118,7 @@ def warp_points(kp1, kp2, image1_shape, image2_shape, batch):
         w_kp2, w_vis_kp2_mask = warp_keypoints_RBT(kp2, depth2, intrinsic2, extrinsic2, shift_scale2,
                                                    depth1, intrinsic1, extrinsic1, shift_scale1)
 
-    return w_kp1, w_kp2, w_vis_kp1_mask, w_vis_kp2_mask
+    return w_kp1, w_vis_kp1_mask, w_kp2, w_vis_kp2_mask
 
 
 """

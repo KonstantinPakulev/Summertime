@@ -77,10 +77,11 @@ metric:
 
 experiment:
   lr: 0.001
-  lr_decay: 0.4
-  lr_schedule:
-    - 13
-    - 26
+#  lr_decay: 0.4
+#  lr_schedule:
+#    - 13
+#    - 26
+#  num_epochs: 35
   num_epochs: 35
   n_saved: 3
   return_output: False

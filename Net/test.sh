@@ -4,12 +4,12 @@ model_config_path="configs/model.yaml"
 mode_config_path="configs/test.yaml"
 
 model_name="NetVGG"
-model_version='v1'
+model_version='v4'
 
 mode="test"
 
-dataset_name="megadepth"
-#dataset_name="aachen"
+#dataset_name="megadepth"
+dataset_name="aachen"
 #dataset_name="hpatches_view"
 #dataset_name="hpatches_illum"
 #dataset_name-="hpatches_view,hpatches_illum"

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 import Net.source.core.experiment as exp
@@ -75,11 +76,13 @@ class PoseLoss(nn.Module):
         gt_E_param = compose_gt_transform(intrinsics1, intrinsics2, extrinsics1, extrinsics2, E_param)
 
         if self.loss_version == '1':
-            est_E_param, success_mask = ParamRelPose().apply(r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2)
+            t_px_thresh = torch.tensor(self.px_thresh).to(kp1.device)
+            est_E_param, success_mask = ParamRelPose().apply(r_kp1, nn_r_i1_kp2, mutual_gt_matches_mask, intrinsics1, intrinsics2, t_px_thresh)
 
         elif self.loss_version == '2':
+            t_px_thresh = torch.tensor(self.px_thresh).to(kp1.device)
             est_E_param, success_mask = ParamTruncRelPose().apply(r_kp1, nn_r_i1_kp2, nn_r_kp2, mutual_gt_matches_mask,
-                                                                  intrinsics1, intrinsics2, extrinsics1, extrinsics2)
+                                                                  intrinsics1, intrinsics2, extrinsics1, extrinsics2, t_px_thresh)
 
         else:
             raise NotImplementedError

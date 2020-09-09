@@ -30,20 +30,22 @@ from Net.source.nn.net.criterion_wrappers import DescTripletLossWrapper, LocEpip
 from Net.source.utils.matching_utils import DescriptorDistance
 
 from Net.source.utils.log_utils import plot_losses_tensorboard, plot_metrics_tensorboard, \
-    plot_scores, plot_kp_matches, plot_desc_matches, join_logs, print_summary, test_log_to_csv
+    plot_scores, plot_kp_matches, plot_desc_matches, join_logs, print_summary, test_log_to_csv, save_aachen_inference
 
 
 class NetVGGExperiment(Experiment):
 
     def get_model(self):
         if self.model_version in ['v1', 'v2', 'v3', 'v4']:
-            model = NetContainer(self.device, [BackboneWrapper(self.device, VGGJointBackbone.from_config(self.model_config)),
+            model = NetContainer(self.device, [BackboneWrapper(self.device, self.model_config,
+                                                               VGGJointBackbone.from_config(self.model_config)),
                                                DetJointBranchWrapper(self.device, self.model_config),
                                                LocJointBranchWrapper(self.device, self.model_config),
                                                DescJointBranchWrapper(self.device, self.model_config)])
 
         else:
-            model = NetContainer(self.device, [BackboneWrapper(self.device, VGGJointBackbone.from_config(self.model_config)),
+            model = NetContainer(self.device, [BackboneWrapper(self.device, self.model_config,
+                                                               VGGJointBackbone.from_config(self.model_config)),
                                                DetJointBranchWrapper(self.device, self.model_config),
                                                DescJointBranchWrapper(self.device, self.model_config)])
 
@@ -146,12 +148,18 @@ class NetVGGExperiment(Experiment):
 
             self.model.attach(test_loop.engine, test_config)
 
-            @test_loop.engine.on(Events.EPOCH_COMPLETED)
-            def on_epoch(engine):
-                logs = join_logs(engine)
+            if du.AACHEN in test_config[du.DATASET_NAME]:
+                @test_loop.engine.on(Events.ITERATION_COMPLETED)
+                def on_iteration_completed(engine):
+                    save_aachen_inference(self.dataset_config[self.mode], engine.state.output)
 
-                print_summary(logs, test_config)
-                test_log_to_csv(self.log_dir, logs, test_config, self.model_config, test_config[du.DATASET_NAME])
+            else:
+                @test_loop.engine.on(Events.EPOCH_COMPLETED)
+                def on_epoch(engine):
+                    logs = join_logs(engine)
+
+                    print_summary(logs, test_config)
+                    test_log_to_csv(self.log_dir, logs, test_config, self.model_config, test_config[du.DATASET_NAME])
 
             return [test_loop]
 
@@ -199,21 +207,6 @@ def get_loop(experiment, mode):
 
 # Legacy code
 
-#     elif d.AACHEN in datasets:
-#         @test_loop.engine.on(Events.ITERATION_COMPLETED)
-#         def on_iteration_completed(engine):
-#             save_aachen_inference(self.datasets_config[self.mode][d.AACHEN][d.DATASET_ROOT], engine.state.output)
-#
-#     elif d.HPATCHES_ILLUM in datasets or d.HPATCHES_VIEW in datasets:
-#         px_thresh = self.metric_config[l.TEST][exp.PX_THRESH]
-#
-#         DetailedMetric(RepTransformer(px_thresh, True), len(px_thresh)).attach(test_loop.engine, ev.REP)
-#         DetailedMetric(MSTransformer(px_thresh, DescriptorDistance.INV_COS_SIM, True), len(px_thresh)) \
-#             .attach(test_loop.engine, ev.MS)
-#         DetailedMetric(MMATransformer(px_thresh, DescriptorDistance.INV_COS_SIM, True), len(px_thresh)) \
-#             .attach(test_loop.engine, ev.MMA)
-#         AveragePeriodicMetric(TimeTransformer()).attach(test_loop.engine, a.FORWARD_TIME)
-#
 #         @test_loop.engine.on(Events.EPOCH_COMPLETED)
 #         def on_epoch(engine):
 #             logs = join_logs(engine, [ev.REP, ev.MS, ev.MMA])

@@ -9,15 +9,16 @@ model:
       checkpoint_name: "5_ems=0.3778786"
 
     v2:
-      checkpoint_name: "7_ems=0.389194"
+      checkpoint_name: "8_ems=0.447693"
 
     v3:
       checkpoint_name: "1_emms=69.18538"
 
+    v4:
+      checkpoint_name: "33_ems=0.4560092"
+
 dataset:
-
-  # TODO. How about creating a notebook (or a routine) with sampling and visualization of data before changing the csv
-
+  
   analyze:
     hpatches_view:
       dataset_root: "/home/konstantin/datasets/hpatch_v_sequence"

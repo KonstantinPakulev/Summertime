@@ -1,10 +1,14 @@
 import os
 import cv2
 
+from skimage import io
+
 import numpy as np
 import pandas as pd
 
 import Net.source.datasets.dataset_utils as du
+
+from Net.source.utils.vis_utils import plot_figures
 
 
 """
@@ -110,18 +114,10 @@ def create_sampled_annotations_by_scene(scene_info_root, mode, dataset_name, sce
 
 
 def create_annotations_by_log(log, annotations_path, log_path, file_name):
-    annotations = pd.read_csv(annotations_path, index_col=[0])
-
-    scene = prepare_scene_name(log[du.SCENE_NAME]).unique().tolist()
-    annotations = annotations[annotations[du.SCENE_NAME].isin(scene)]
-
-    feature = annotations[du.ID1].astype(str) + annotations[du.ID2].astype(str)
-    selection = (log[du.ID1].astype(str) + log[du.ID2].astype(str)).tolist()
-
     file_path = "/".join(log_path.split("/")[:-1])
     file_path = os.path.join(file_path, f"{file_name}.csv")
 
-    annotations = annotations[feature.isin(selection)]
+    annotations = select_from_annotations(annotations_path, log)
     annotations.to_csv(file_path)
 
 
@@ -130,10 +126,11 @@ Dataset visualization utils
 """
 
 
-def visualize_image_pair(pair_info, annotations_path):
-    annotations = pd.read_csv(annotations_path, index_col=[0])
+def visualize_log_row(annotations_row):
+    image1_path, image2_path = annotations_row[du.IMAGE1].item(), annotations_row[du.IMAGE2].item()
 
-    # TODO.
+    plot_figures({'image1': io.imread(image1_path),
+                  'image2': io.imread(image2_path)}, 1, 2)
 
 
 """
@@ -143,3 +140,14 @@ Support utils
 
 def prepare_scene_name(scene_name):
     return scene_name.astype(str).apply(lambda x: x.zfill(4))
+
+
+def select_from_annotations(annotations_path, log):
+    annotations = pd.read_csv(annotations_path, index_col=[0])
+
+    feature = annotations[du.ID1].astype(str) + annotations[du.ID2].astype(str)
+    selection = (log[du.ID1].astype(str) + log[du.ID2].astype(str)).tolist()
+
+    annotations = annotations[feature.isin(selection)]
+
+    return annotations

@@ -17,9 +17,9 @@ def create_dataset(dataset_config, model_config, mode):
     datasets = []
 
     for d_key, d_config in dataset_config.items():
-        size = (d_config[du.HEIGHT], d_config[du.WIDTH])
 
         if d_key in [du.HPATCHES_VIEW, du.HPATCHES_ILLUM]:
+            size = (d_config[du.HEIGHT], d_config[du.WIDTH])
 
             if mode in [l.TEST, l.ANALYZE]:
                 item_transforms = [ht.HPatchesToPILImage()]
@@ -37,6 +37,8 @@ def create_dataset(dataset_config, model_config, mode):
                 raise NotImplementedError
 
         elif d_key == du.MEGADEPTH:
+            size = (d_config[du.HEIGHT], d_config[du.WIDTH])
+
             if mode in l.TRAIN:
                 item_transforms = [mt.MegaDepthToPILImage()]
 
@@ -91,7 +93,7 @@ def create_dataset(dataset_config, model_config, mode):
                 if model_config[exp.INPUT_CHANNELS] == 1:
                     item_transforms += [at.AachenToGrayScale()]
 
-                item_transforms += [at.AachenResize(du.ParityCrop(8)),
+                item_transforms += [at.AachenCrop(du.ParityCrop(8)),
                                     at.AachenToTensor()]
 
                 dataset = AachenDataset.from_config(d_config, item_transforms)
